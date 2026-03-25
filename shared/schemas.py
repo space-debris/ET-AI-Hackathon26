@@ -15,7 +15,7 @@ DO NOT modify field names without team consensus — breaking change.
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Literal
-from datetime import date
+from datetime import date as DateType
 from enum import Enum
 
 
@@ -84,7 +84,7 @@ class Transaction(BaseModel):
     fund_name: str = Field(..., description="Full fund name as it appears on statement")
     isin: Optional[str] = Field(None, description="ISIN code if available")
     amc: Optional[str] = Field(None, description="AMC name (e.g., HDFC, SBI, ICICI)")
-    date: date = Field(..., description="Transaction date")
+    date: DateType = Field(..., description="Transaction date")
     amount: float = Field(..., description="Transaction amount in INR")
     units: float = Field(..., description="Number of units transacted")
     nav: float = Field(..., description="NAV at time of transaction")
