@@ -1,84 +1,59 @@
 # FinSage AI — Progress Review & Code Report
 
-> **Updated**: March 25, 2026, 11:24 PM IST | **Days Remaining**: 3
+> **Updated**: March 25, 2026, 11:42 PM IST | **Days Remaining**: 3
 
 ---
 
 ## Overall Progress: ~65%
 
-| Module | Owner | Status | Notes |
-|---|---|---|---|
-| Shared Schemas | Mayur | ✅ 100% | 502 lines, all Pydantic contracts |
-| Config | Mayur | ✅ 100% | Tax slabs, SEBI constants, FIRE defaults |
-| Prompt Templates | Mayur | ✅ 100% | advisory_system, fire_planner, tax_optimizer |
-| Advisory Agent | Mayur | ✅ 100% | 878 lines — rebalancing, FIRE, tax, health score |
-| Compliance Agent | Mayur | ✅ 100% | 388 lines — regex scanning, no LLM needed |
-| **Orchestrator** | Mayur | **✅ 100%** | 415 lines — LangGraph StateGraph pipeline |
-| Parser Agent | Abhishek | ✅ 95% | PDF parsing via pdfplumber + camelot fallback |
-| Analytics Agent | Abhishek | ✅ 85% | XIRR, overlap, category allocation done. Expense ratios need real data |
-| XIRR Calculator | Abhishek | ✅ 100% | Dual solver (Newton + Brentq) |
-| Overlap Detector | Abhishek | ✅ 100% | Stock-level overlap, weighted exposure |
-| Fund Fetcher | Abhishek | ✅ 100% | Live NAV via mftool |
-| Sample CAMS PDF | Abhishek | ✅ 100% | 6 funds, 4 AMCs, ReportLab-generated |
-| **Merge** | Mayur | **✅ Done** | Abhishek's branch merged into `orchestration` |
-| Tests | Both | 🟡 50% | Abhishek's 3 tests pass; Advisory tests in progress |
-| Frontend | Ayush | 🟡 10% | App skeleton only |
-| Docker | Mayur | 🔴 0% | — |
-
----
-
-## What Was Done (Day 1 — Late Evening Session)
-
-### Session 1-3 (Earlier Today)
-1. Built all prompt templates (`advisory_system.txt`, `fire_planner.txt`, `tax_optimizer.txt`)
-2. Built `advisory_agent.py` (878 lines) — LLM-powered + deterministic tax math
-3. Built `compliance_agent.py` (388 lines) — regex-based SEBI compliance scanning
-4. Built `orchestrator.py` (415 lines) — LangGraph StateGraph pipeline with conditional routing
-5. Fixed Pydantic 2.12 `date: date` field name clash → `DateType`
-6. Cleaned `requirements.txt` (removed torch-pulling deps)
-7. Set up clean `.venv`, verified all 4 module imports
-
-### Session 4 (This Session)
-8. Reviewed Abhishek's `abhishek-analytics` branch (7 files)
-9. Merged Abhishek's code into `orchestration` branch
-10. Writing advisory agent unit tests (tax math, HRA, slab rates)
-
----
-
-## Abhishek's Branch Review (`abhishek-analytics`)
-
-**Quality: ✅ Good** — well-structured, follows shared contracts, proper docstrings.
-
-**Minor Issues:**
-- 🔴 Deleted our `advisory_agent.py` (accidental) — restored during merge
-- `expense_ratio` hardcoded to 0.0, `top_holdings` left empty → overlap/expense drag returns zero without factsheet data
-- `_infer_amc()` takes first word of fund name — fragile but OK for hackathon
+| Module | Owner | Status | Lines | Notes |
+|---|---|---|---|---|
+| Shared Schemas | Mayur | ✅ 100% | 502 | All Pydantic contracts |
+| Config | Mayur | ✅ 100% | 168 | Tax slabs (FY 2025-26), SEBI constants, FIRE defaults |
+| Prompt Templates | Mayur | ✅ 100% | 200 | advisory_system, fire_planner, tax_optimizer |
+| Advisory Agent | Mayur | ✅ 100% | 878 | Rebalancing, FIRE, tax (deterministic math), health score |
+| Compliance Agent | Mayur | ✅ 100% | 388 | Regex scanning + SEBI disclaimer, no LLM needed |
+| Orchestrator | Mayur | ✅ 100% | 415 | LangGraph StateGraph, conditional routing, 2 modes |
+| Parser Agent | Abhishek | ✅ 95% | 200 | pdfplumber + camelot fallback |
+| Analytics Agent | Abhishek | ✅ 85% | 320 | XIRR, overlap, category alloc. Expense ratios need factsheet data |
+| XIRR Calculator | Abhishek | ✅ 100% | 120 | Dual solver (Newton + Brentq) |
+| Overlap Detector | Abhishek | ✅ 100% | 150 | Stock-level overlap, weighted exposure |
+| Fund Fetcher | Abhishek | ✅ 100% | 100 | Live NAV via mftool |
+| Sample CAMS PDF | Abhishek | ✅ 100% | — | 6 funds, 4 AMCs, ReportLab-generated |
+| **Branch Merge** | Mayur | **✅ Done** | — | `abhishek-analytics` → `orchestration` |
+| **Tests** | Both | **✅ 100%** | 420 | **38/38 pass** (33 advisory + 5 analytics/parser) |
+| Frontend | Ayush | 🟡 10% | — | App skeleton only |
+| Docker | Mayur | 🔴 0% | — | Not started |
+| Architecture Diagram | Mayur | 🔴 0% | — | Not started |
 
 ---
 
 ## Bugs Fixed
 
-1. **Pydantic 2.12 crash**: `date: date` field name clashed with type → fixed to `DateType`
-2. **Bloated venv**: `requirements.txt` had torch-pulling deps → commented out, fresh `.venv`
-3. **Orchestrator syntax**: Garbage text in `get_graph_visualization()` → cleaned
+1. **Pydantic 2.12 crash**: `date: date` field name clashed with type → renamed to `DateType`
+2. **Bloated venv**: removed `sentence-transformers`, `camelot-py[cv]` (~3GB torch deps)
+3. **Orchestrator syntax**: garbage text in `get_graph_visualization()` → cleaned
+4. **Abhishek's accidental delete**: `advisory_agent.py` was deleted in his branch → restored during merge
 
 ---
 
-## Data Sources
+## What's Left
 
-| Data | Source | How |
-|---|---|---|
-| Portfolio transactions | **User uploads** CAMS PDF | Parser Agent extracts |
-| Financial profile | **User fills form** (age, income, tax details) | Streamlit sidebar |
-| Live NAV | **mftool API** (auto) | fund_fetcher.py |
-| Tax slabs | **Hardcoded** in config.py | FY 2025-26 |
-| SEBI compliance | **Hardcoded** banned phrases + regex | No external data |
+### Day 2 (March 26) — Integration
+- [ ] Integration test: run full pipeline end-to-end with `data/sample_cams.pdf`
+- [ ] Frontend: Connect Ayush's Streamlit app to `orchestrator.run_pipeline()`
+- [ ] Frontend: Portfolio charts, FIRE planner UI, health score radar
 
----
+### Day 3 (March 27) — Scenario Testing
+- [ ] Scenario A: FIRE Path Plan (manual sidebar input)
+- [ ] Scenario B: Tax Regime Comparison (manual sidebar input)
+- [ ] Scenario C: MF X-Ray + Rebalancing (sample CAMS PDF upload)
 
-## Next Steps (Day 2)
-1. ✅ ~~Merge Abhishek's branch~~ → Done
-2. 🔄 Write advisory agent tests (tax math, HRA, slab rates) — in progress
-3. Integration test: full pipeline with sample CAMS PDF
-4. Frontend work with Ayush
-5. Docker + README
+### Day 4 (March 28) — Polish & Submission
+- [ ] Docker (`docker-compose up` → app at localhost:8501)
+- [ ] Architecture diagram (`architecture/finsage_architecture.png`)
+- [ ] README finalize
+- [ ] PDF download button tested (Ayush)
+- [ ] ChromaDB indexing + RAG for factsheets (Abhishek)
+- [ ] 3-minute demo video
+- [ ] Submission form
