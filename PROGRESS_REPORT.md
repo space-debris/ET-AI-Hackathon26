@@ -14,8 +14,8 @@
 | Advisory Agent | Mayur | ✅ 100% | 878 | Rebalancing, FIRE, tax (deterministic math), health score |
 | Compliance Agent | Mayur | ✅ 100% | 388 | Regex scanning + SEBI disclaimer, no LLM needed |
 | Orchestrator | Mayur | ✅ 100% | 415 | LangGraph StateGraph, conditional routing, 2 modes |
-| Parser Agent | Abhishek | ✅ 95% | 200 | pdfplumber + camelot fallback |
-| Analytics Agent | Abhishek | ✅ 85% | 320 | XIRR, overlap, category alloc. Expense ratios need factsheet data |
+| Parser Agent | Abhishek | ✅ 100% | 200 | pdfplumber + camelot fallback, robust transaction extraction complete |
+| Analytics Agent | Abhishek | ✅ 100% | 320 | XIRR, overlap, category alloc, expense ratio and factsheet integration complete |
 | XIRR Calculator | Abhishek | ✅ 100% | 120 | Dual solver (Newton + Brentq) |
 | Overlap Detector | Abhishek | ✅ 100% | 150 | Stock-level overlap, weighted exposure |
 | Fund Fetcher | Abhishek | ✅ 100% | 100 | Live NAV via mftool |
