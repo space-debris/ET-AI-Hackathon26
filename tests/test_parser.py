@@ -42,3 +42,19 @@ class TestParserAgent:
         assert result["raw_text"] == mock_text
         assert len(result["transactions"]) == 1
         assert result["transactions"][0]["fund_name"] == "SBI Bluechip Fund"
+
+    def test_extract_transactions_parses_month_name_and_nav_units_order(self):
+        agent = ParserAgent()
+        raw_text = (
+            "10-Apr-2020 HDFC Top 100 Fund - Regular Growth Purchase (SIP) 5,000 412.35 12.127 "
+            "Folio:1234567/89 INF179K01VV5"
+        )
+
+        transactions = agent.extract_transactions(raw_text)
+
+        assert len(transactions) == 1
+        assert transactions[0].transaction_type == TransactionType.PURCHASE
+        assert transactions[0].date == date(2020, 4, 10)
+        assert transactions[0].amount == 5000
+        assert transactions[0].nav == 412.35
+        assert transactions[0].units == 12.127

@@ -18,6 +18,7 @@ from shared.schemas import TransactionType
 from utils.xirr_calculator import calculate_xirr
 from utils.overlap_detector import detect_overlap
 from utils.fund_fetcher import get_fund_nav
+from utils.factsheet_loader import load_factsheet_index, lookup_factsheet, parse_top_holdings
 
 
 class AnalyticsAgent:
@@ -33,8 +34,14 @@ class AnalyticsAgent:
     Owner: Abhishek
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, factsheet_index: Dict[str, Dict] | None = None):
+        self.factsheet_index = factsheet_index if factsheet_index is not None else load_factsheet_index()
+
+    @staticmethod
+    def _to_fraction(value: float) -> float:
+        # Factsheet values are usually in percent terms (e.g., 1.68 for 1.68%).
+        # If already a decimal fraction (e.g., 0.0168), keep as-is.
+        return value / 100.0 if value >= 0.2 else value
 
     @staticmethod
     def _infer_category_from_name(fund_name: str) -> FundCategory:
@@ -199,20 +206,44 @@ class AnalyticsAgent:
             )
 
             sample_txn = fund_txns[0]
+            factsheet = lookup_factsheet(fund_name=fund_name, isin=sample_txn.isin, index=self.factsheet_index)
+
+            expense_ratio = 0.0
+            direct_expense_ratio = None
+            top_holdings = []
+            category = self._infer_category_from_name(fund_name)
+            amc_value = sample_txn.amc
+
+            if factsheet:
+                expense_ratio = self._to_fraction(float(factsheet.get("expense_ratio", 0.0)))
+                direct_value = factsheet.get("direct_expense_ratio")
+                if direct_value is not None:
+                    direct_expense_ratio = self._to_fraction(float(direct_value))
+                top_holdings = parse_top_holdings(factsheet.get("top_holdings", []))
+
+                category_raw = str(factsheet.get("category", "")).strip().lower()
+                if category_raw:
+                    try:
+                        category = FundCategory(category_raw)
+                    except ValueError:
+                        category = self._infer_category_from_name(fund_name)
+
+                amc_value = str(factsheet.get("amc") or sample_txn.amc or "").upper() or None
+
             holdings.append(
                 FundHolding(
                     fund_name=fund_name,
                     isin=sample_txn.isin,
-                    amc=sample_txn.amc,
-                    category=self._infer_category_from_name(fund_name),
+                    amc=amc_value,
+                    category=category,
                     current_value=current_value,
                     invested_amount=invested_amount,
                     units_held=units_held,
                     current_nav=current_nav,
-                    expense_ratio=0.0,
-                    direct_expense_ratio=None,
+                    expense_ratio=expense_ratio,
+                    direct_expense_ratio=direct_expense_ratio,
                     plan_type=self._infer_plan_type(fund_name),
-                    top_holdings=[],
+                    top_holdings=top_holdings,
                     holding_period_days=holding_period_days,
                     xirr=fund_xirr,
                     absolute_return=absolute_return,

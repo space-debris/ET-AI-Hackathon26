@@ -94,3 +94,59 @@ class TestAnalyticsAgent:
         assert result["current_agent"] == "analytics"
         assert result["analytics"]["total_invested"] > 0
         assert len(result["analytics"]["holdings"]) == 1
+
+    def test_analytics_uses_factsheet_for_expense_and_holdings(self):
+        factsheet_index = {
+            "hdfc top 100": {
+                "scheme": "HDFC Top 100 Fund - Regular Plan - Growth",
+                "isin": "INF179K01VV5",
+                "amc": "HDFC",
+                "category": "large_cap",
+                "expense_ratio": 1.68,
+                "direct_expense_ratio": 0.55,
+                "top_holdings": [
+                    {"stock_name": "Reliance Industries", "weight": 0.092, "sector": "Energy"},
+                    {"stock_name": "HDFC Bank", "weight": 0.081, "sector": "Banking"},
+                ],
+            },
+            "nippon india large cap": {
+                "scheme": "Nippon India Large Cap Fund - Regular Plan - Growth",
+                "isin": "INF204K01EY1",
+                "amc": "NIPPON",
+                "category": "large_cap",
+                "expense_ratio": 1.72,
+                "direct_expense_ratio": 0.58,
+                "top_holdings": [
+                    {"stock_name": "Reliance Industries", "weight": 0.088, "sector": "Energy"},
+                ],
+            },
+        }
+        agent = AnalyticsAgent(factsheet_index=factsheet_index)
+
+        transactions = [
+            Transaction(
+                fund_name="HDFC Top 100 Fund - Regular Growth",
+                date=date(2024, 1, 1),
+                amount=10000,
+                units=100,
+                nav=100,
+                transaction_type=TransactionType.PURCHASE,
+                amc="HDFC",
+                isin="INF179K01VV5",
+            ),
+            Transaction(
+                fund_name="Nippon India Large Cap Fund - Regular Growth",
+                date=date(2024, 1, 1),
+                amount=9000,
+                units=90,
+                nav=100,
+                transaction_type=TransactionType.PURCHASE,
+                amc="NIPPON",
+                isin="INF204K01EY1",
+            ),
+        ]
+
+        result = agent.calculate_portfolio(transactions)
+
+        assert result.expense_ratio_drag_inr > 0
+        assert len(result.overlap_matrix) > 0

@@ -30,7 +30,7 @@ class ParserAgent:
     """
 
     def __init__(self):
-        self._line_pattern = re.compile(
+        self._line_pattern_units_nav = re.compile(
             r"^(?P<date>\d{1,2}[\-/]\d{1,2}[\-/]\d{2,4}|\d{4}[\-/]\d{1,2}[\-/]\d{1,2})\s+"
             r"(?P<fund>.*?)\s+"
             r"(?P<txn_type>purchase|redemption|sip|dividend|switch\s*in|switch\s*out)\s+"
@@ -39,13 +39,37 @@ class ParserAgent:
             r"(?P<nav>[\d,]+(?:\.\d+)?)",
             flags=re.IGNORECASE,
         )
+        self._line_pattern_nav_units = re.compile(
+            r"^(?P<date>\d{1,2}[\-/][A-Za-z]{3}[\-/]\d{2,4}|\d{1,2}[\-/]\d{1,2}[\-/]\d{2,4}|\d{4}[\-/]\d{1,2}[\-/]\d{1,2})\s+"
+            r"(?P<fund>.*?)\s+"
+            r"(?P<txn_type>purchase\s*(?:\([^)]+\))?|redemption|sip|dividend|switch\s*in|switch\s*out)\s+"
+            r"(?P<amount>-?[\d,]+(?:\.\d+)?)\s+"
+            r"(?P<nav>[\d,]+(?:\.\d+)?)\s+"
+            r"(?P<units>-?[\d,]+(?:\.\d+)?)",
+            flags=re.IGNORECASE,
+        )
         self._folio_pattern = re.compile(r"folio\s*[:#]?\s*([A-Za-z0-9\-/]+)", re.IGNORECASE)
         self._isin_pattern = re.compile(r"\b([A-Z]{2}[A-Z0-9]{10})\b")
+        self._context_line_pattern = re.compile(
+            r"^AMC:\s*(?P<amc>.*?)\s+Folio:\s*(?P<folio>[A-Za-z0-9\-/]+)\s+ISIN:\s*(?P<isin>[A-Z]{2}[A-Z0-9]{10})",
+            flags=re.IGNORECASE,
+        )
+        self._table_row_pattern = re.compile(
+            r"^(?P<date>\d{1,2}[\-/][A-Za-z]{3}[\-/]\d{2,4}|\d{1,2}[\-/]\d{1,2}[\-/]\d{2,4})\s+"
+            r"(?P<txn_type>purchase\s*(?:\([^)]+\))?|redemption|sip|dividend|switch\s*in|switch\s*out)\s+"
+            r"(?P<amount>-?[\d,]+(?:\.\d+)?)\s+"
+            r"(?P<nav>[\d,]+(?:\.\d+)?)\s+"
+            r"(?P<units>-?[\d,]+(?:\.\d+)?)$",
+            flags=re.IGNORECASE,
+        )
 
     @staticmethod
     def _parse_date(value: str):
         value = value.strip()
-        formats = ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%Y/%m/%d", "%d-%m-%y", "%d/%m/%y")
+        formats = (
+            "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%Y/%m/%d", "%d-%m-%y", "%d/%m/%y",
+            "%d-%b-%Y", "%d/%b/%Y", "%d-%b-%y", "%d/%b/%y",
+        )
         for fmt in formats:
             try:
                 return datetime.strptime(value, fmt).date()
@@ -59,7 +83,8 @@ class ParserAgent:
 
     @staticmethod
     def _normalize_txn_type(value: str) -> TransactionType:
-        normalized = value.strip().lower().replace(" ", "_")
+        normalized = re.sub(r"\s*\([^)]+\)", "", value.strip().lower())
+        normalized = normalized.replace(" ", "_")
         mapping = {
             "purchase": TransactionType.PURCHASE,
             "redemption": TransactionType.REDEMPTION,
@@ -131,34 +156,76 @@ class ParserAgent:
             return transactions
 
         lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+        current_fund: Optional[str] = None
+        current_amc: Optional[str] = None
+        current_folio: Optional[str] = None
+        current_isin: Optional[str] = None
+
         for line in lines:
-            match = self._line_pattern.match(line)
+            # Capture fund context from detailed statement heading lines.
+            if "fund" in line.lower() and not re.match(r"^\d", line) and "portfolio summary" not in line.lower():
+                if line.lower().startswith("units:") or line.lower().startswith("date type"):
+                    pass
+                else:
+                    current_fund = line.strip()
+
+            context_match = self._context_line_pattern.search(line)
+            if context_match:
+                current_amc = context_match.group("amc").strip()
+                current_folio = context_match.group("folio").strip()
+                current_isin = context_match.group("isin").strip()
+
+            match = self._line_pattern_units_nav.match(line)
+            value_order = "amount_units_nav"
             if not match:
+                match = self._line_pattern_nav_units.match(line)
+                value_order = "amount_nav_units"
+            if match:
+                date_value = self._parse_date(match.group("date"))
+                fund_name = match.group("fund").strip(" ,-")
+                txn_type = self._normalize_txn_type(match.group("txn_type"))
+                amount = self._parse_amount(match.group("amount"))
+                if value_order == "amount_units_nav":
+                    units = self._parse_amount(match.group("units"))
+                    nav = self._parse_amount(match.group("nav"))
+                else:
+                    nav = self._parse_amount(match.group("nav"))
+                    units = self._parse_amount(match.group("units"))
+
+                folio_match = self._folio_pattern.search(line)
+                isin_match = self._isin_pattern.search(line)
+
+                transactions.append(
+                    Transaction(
+                        fund_name=fund_name,
+                        isin=isin_match.group(1) if isin_match else None,
+                        amc=self._infer_amc(fund_name),
+                        date=date_value,
+                        amount=amount,
+                        units=units,
+                        nav=nav,
+                        transaction_type=txn_type,
+                        folio_number=folio_match.group(1) if folio_match else None,
+                    )
+                )
                 continue
 
-            date_value = self._parse_date(match.group("date"))
-            fund_name = match.group("fund").strip(" ,-")
-            txn_type = self._normalize_txn_type(match.group("txn_type"))
-            amount = self._parse_amount(match.group("amount"))
-            units = self._parse_amount(match.group("units"))
-            nav = self._parse_amount(match.group("nav"))
-
-            folio_match = self._folio_pattern.search(line)
-            isin_match = self._isin_pattern.search(line)
-
-            transactions.append(
-                Transaction(
-                    fund_name=fund_name,
-                    isin=isin_match.group(1) if isin_match else None,
-                    amc=self._infer_amc(fund_name),
-                    date=date_value,
-                    amount=amount,
-                    units=units,
-                    nav=nav,
-                    transaction_type=txn_type,
-                    folio_number=folio_match.group(1) if folio_match else None,
+            # Parse detailed table rows where the fund name is only present in a heading line.
+            row_match = self._table_row_pattern.match(line)
+            if row_match and current_fund:
+                transactions.append(
+                    Transaction(
+                        fund_name=current_fund,
+                        isin=current_isin,
+                        amc=current_amc or self._infer_amc(current_fund),
+                        date=self._parse_date(row_match.group("date")),
+                        amount=self._parse_amount(row_match.group("amount")),
+                        units=self._parse_amount(row_match.group("units")),
+                        nav=self._parse_amount(row_match.group("nav")),
+                        transaction_type=self._normalize_txn_type(row_match.group("txn_type")),
+                        folio_number=current_folio,
+                    )
                 )
-            )
 
         return transactions
 

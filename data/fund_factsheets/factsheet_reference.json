@@ -1,0 +1,94 @@
+{
+  "funds": [
+    {
+      "scheme": "HDFC Top 100 Fund - Regular Plan - Growth",
+      "isin": "INF179K01VV5",
+      "amc": "HDFC",
+      "category": "large_cap",
+      "expense_ratio": 1.68,
+      "direct_expense_ratio": 0.55,
+      "top_holdings": [
+        {"stock_name": "Reliance Industries", "weight": 0.092, "sector": "Energy"},
+        {"stock_name": "HDFC Bank", "weight": 0.081, "sector": "Banking"},
+        {"stock_name": "Infosys", "weight": 0.074, "sector": "IT"},
+        {"stock_name": "ICICI Bank", "weight": 0.068, "sector": "Banking"},
+        {"stock_name": "TCS", "weight": 0.061, "sector": "IT"}
+      ]
+    },
+    {
+      "scheme": "Nippon India Large Cap Fund - Regular Plan - Growth",
+      "isin": "INF204K01EY1",
+      "amc": "NIPPON",
+      "category": "large_cap",
+      "expense_ratio": 1.72,
+      "direct_expense_ratio": 0.58,
+      "top_holdings": [
+        {"stock_name": "Reliance Industries", "weight": 0.088, "sector": "Energy"},
+        {"stock_name": "Infosys", "weight": 0.082, "sector": "IT"},
+        {"stock_name": "HDFC Bank", "weight": 0.079, "sector": "Banking"},
+        {"stock_name": "TCS", "weight": 0.071, "sector": "IT"},
+        {"stock_name": "Bharti Airtel", "weight": 0.054, "sector": "Telecom"}
+      ]
+    },
+    {
+      "scheme": "Axis Bluechip Fund - Regular Plan - Growth",
+      "isin": "INF846K01EW2",
+      "amc": "AXIS",
+      "category": "large_cap",
+      "expense_ratio": 1.64,
+      "direct_expense_ratio": 0.54,
+      "top_holdings": [
+        {"stock_name": "Infosys", "weight": 0.095, "sector": "IT"},
+        {"stock_name": "Reliance Industries", "weight": 0.084, "sector": "Energy"},
+        {"stock_name": "HDFC Bank", "weight": 0.076, "sector": "Banking"},
+        {"stock_name": "Avenue Supermarts", "weight": 0.062, "sector": "Retail"},
+        {"stock_name": "Bajaj Finance", "weight": 0.058, "sector": "Financials"}
+      ]
+    },
+    {
+      "scheme": "Mirae Asset Emerging Bluechip Fund - Direct Plan - Growth",
+      "isin": "INF769K01EF6",
+      "amc": "MIRAE",
+      "category": "mid_cap",
+      "expense_ratio": 0.54,
+      "direct_expense_ratio": 0.54,
+      "top_holdings": [
+        {"stock_name": "ICICI Bank", "weight": 0.089, "sector": "Banking"},
+        {"stock_name": "Axis Bank", "weight": 0.073, "sector": "Banking"},
+        {"stock_name": "SBI", "weight": 0.068, "sector": "Banking"},
+        {"stock_name": "Maruti Suzuki", "weight": 0.061, "sector": "Auto"},
+        {"stock_name": "Sun Pharma", "weight": 0.057, "sector": "Pharma"}
+      ]
+    },
+    {
+      "scheme": "HDFC Mid-Cap Opportunities Fund - Direct Plan - Growth",
+      "isin": "INF179KB1HO9",
+      "amc": "HDFC",
+      "category": "mid_cap",
+      "expense_ratio": 0.72,
+      "direct_expense_ratio": 0.72,
+      "top_holdings": [
+        {"stock_name": "Supreme Industries", "weight": 0.048, "sector": "Industrials"},
+        {"stock_name": "Persistent Systems", "weight": 0.045, "sector": "IT"},
+        {"stock_name": "Tube Investments", "weight": 0.041, "sector": "Industrials"},
+        {"stock_name": "Coforge", "weight": 0.039, "sector": "IT"},
+        {"stock_name": "Bharat Forge", "weight": 0.036, "sector": "Industrials"}
+      ]
+    },
+    {
+      "scheme": "Kotak Flexi Cap Fund - Regular Plan - Growth",
+      "isin": "INF174K01LS2",
+      "amc": "KOTAK",
+      "category": "flexi_cap",
+      "expense_ratio": 1.58,
+      "direct_expense_ratio": 0.52,
+      "top_holdings": [
+        {"stock_name": "HDFC Bank", "weight": 0.081, "sector": "Banking"},
+        {"stock_name": "Reliance Industries", "weight": 0.076, "sector": "Energy"},
+        {"stock_name": "Infosys", "weight": 0.069, "sector": "IT"},
+        {"stock_name": "Kotak Mahindra Bank", "weight": 0.064, "sector": "Banking"},
+        {"stock_name": "L&T", "weight": 0.052, "sector": "Industrials"}
+      ]
+    }
+  ]
+}
