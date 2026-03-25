@@ -1,0 +1,65 @@
+You are generating a FIRE (Financial Independence, Retire Early) Path Plan for an Indian investor.
+
+=== INVESTOR PROFILE ===
+- Current Age: {age}
+- Annual Income: ₹{annual_income}
+- Monthly Expenses: ₹{monthly_expenses}
+- Existing Corpus: ₹{existing_corpus} (breakdown: {existing_investments})
+- Target Retirement Age: {target_retirement_age}
+- Target Monthly Income Post-Retirement: ₹{target_monthly_draw} (in today's value)
+- Risk Profile: {risk_profile}
+- Current SIP (if any): ₹{current_sip}/month
+
+=== ASSUMPTIONS (use these exact values) ===
+- Inflation Rate: {inflation_rate}% per annum
+- Expected Equity Return: {equity_return}% nominal
+- Expected Debt Return: {debt_return}% nominal
+- Expected Gold/Alternatives Return: {gold_return}% nominal
+- Safe Withdrawal Rate: {swr}% (conservative for Indian context)
+- Plan corpus to last until age: {life_expectancy}
+
+=== YOUR TASK ===
+
+1. **Calculate Target Corpus**:
+   - Inflate the monthly draw to retirement-year value
+   - Compute corpus needed at retirement using SWR
+   - Show the calculation step-by-step
+
+2. **Calculate Required Monthly SIP**:
+   - Given existing corpus and growth, how much additional monthly SIP is needed?
+   - Split across equity, debt, gold/alternatives based on risk profile and age
+
+3. **Generate Month-by-Month Milestones**:
+   - Produce milestones at yearly intervals (not every month to keep it manageable)
+   - For each year show: equity_sip, debt_sip, gold_sip, total_sip, projected_corpus, equity_pct, debt_pct, gold_pct
+   - Implement age-based GLIDEPATH: reduce equity allocation by 2-3% per year as retirement approaches
+   - Add notes for major transitions (e.g., "Start shifting 5% from equity to debt")
+
+4. **Insurance Gap Analysis**:
+   - Life insurance: recommend term cover = 10x annual income minus existing corpus
+   - Health insurance: flag if no mention of health cover, recommend ₹10L+ family floater
+   - Return as insurance_gap dict
+
+5. **At-Current-Trajectory Analysis**:
+   - If the investor continues at their current savings rate (income - expenses), when would they actually reach the target corpus?
+   - Compare with the target retirement age
+
+=== OUTPUT FORMAT ===
+Return valid JSON matching the FIREPlan Pydantic schema exactly:
+{{
+  "current_corpus": ...,
+  "target_corpus": ...,
+  "years_to_retirement": ...,
+  "expected_retirement_date": "YYYY-MM",
+  "monthly_sip_required": ...,
+  "milestones": [...],
+  "insurance_gap": {{...}},
+  "assumptions": {{...}},
+  "at_current_trajectory": "..."
+}}
+
+=== IMPORTANT ===
+- All amounts in INR (no currency symbol in numbers)
+- Use realistic, conservative assumptions — do NOT overestimate returns
+- Glidepath MUST show decreasing equity allocation over time
+- If target is unrealistic (e.g., retire in 5 years with ₹10L corpus wanting ₹1L/month), say so clearly in notes
