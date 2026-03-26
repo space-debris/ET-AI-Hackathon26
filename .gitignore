@@ -49,3 +49,8 @@ coverage.xml
 # Logs
 *.log
 logs/
+
+# JavaScript / frontend
+node_modules/
+npm-debug.log*
+react-frontend/dist/
