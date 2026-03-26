@@ -9,6 +9,7 @@ Owner: Mayur
 """
 
 import pytest
+import json
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 
@@ -441,6 +442,25 @@ class TestSchemaModels:
         )
         assert milestone.total_sip == 45000
 
+    def test_fire_milestone_coercion(self, advisory_agent):
+        """Relative and combined year formats should be coerced into valid schema values."""
+        milestone = advisory_agent._coerce_fire_milestone(
+            {
+                "month": "7",
+                "year": "2024-07",
+                "equity_sip": 30000,
+                "debt_sip": 10000,
+                "gold_sip": 5000,
+                "total_sip": 45000,
+                "projected_corpus": 2500000,
+                "equity_pct": 70,
+                "debt_pct": 20,
+                "gold_pct": 10,
+            }
+        )
+        assert milestone.month == 7
+        assert milestone.year == 2024
+
 
 # =============================================================================
 # LangGraph Node Function Tests (mocked LLM)
@@ -479,12 +499,48 @@ class TestAdvisoryAgentRunNode:
         assert len(report.health_score) == 0
 
 
+class TestRebalancingPlanParsing:
+    """Test runtime validation of live rebalancing payloads."""
+
+    def test_skips_unknown_holdings_and_coerces_null_tax(self, advisory_agent, sample_analytics, basic_profile):
+        advisory_agent._call_llm = MagicMock(return_value=json.dumps([
+            {
+                "fund_name": "HDFC Mid-Cap Opp Fund",
+                "action": "increase",
+                "tax_impact": None,
+                "rationale": "Strong performer",
+                "priority": 2,
+            },
+            {
+                "fund_name": "Invented Direct Plan",
+                "action": "reduce",
+                "tax_impact": "LTCG may apply",
+                "rationale": "Not actually held",
+                "priority": 1,
+            },
+        ]))
+
+        actions = advisory_agent.generate_rebalancing_plan(sample_analytics, basic_profile)
+
+        assert len(actions) == 1
+        assert actions[0].fund_name == "HDFC Mid-Cap Opp Fund"
+        assert actions[0].tax_impact == ""
+
+
 # =============================================================================
 # JSON Response Parser Tests
 # =============================================================================
 
 class TestJSONParsing:
     """Test the LLM response JSON parser."""
+
+    def test_coerce_response_text_from_content_blocks(self, advisory_agent):
+        """Flatten list-style content blocks returned by some Gemini models."""
+        text = advisory_agent._coerce_response_text([
+            {"text": '{"key": '},
+            {"text": '"value"}'},
+        ])
+        assert text == '{"key": "value"}'
 
     def test_plain_json(self, advisory_agent):
         """Parse plain JSON string."""
@@ -503,6 +559,11 @@ class TestJSONParsing:
         result = advisory_agent._parse_json_response('[{"a": 1}, {"b": 2}]')
         assert isinstance(result, list)
         assert len(result) == 2
+
+    def test_json_with_literal_newline_in_string(self, advisory_agent):
+        """Repair literal newlines embedded inside JSON strings."""
+        result = advisory_agent._parse_json_response('{"note": "Line 1\nLine 2"}')
+        assert result == {"note": "Line 1\nLine 2"}
 
     def test_invalid_json_raises(self, advisory_agent):
         """Invalid JSON → ValueError."""

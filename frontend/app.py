@@ -8,6 +8,7 @@ Run: streamlit run frontend/app.py
 Owner: Ayush
 """
 
+import json
 import streamlit as st
 from datetime import date
 
@@ -32,6 +33,7 @@ from shared.schemas import (
     TaxRegimeComparison, TaxStep, TaxInstrumentSuggestion,
     HealthScoreDimension,
 )
+from shared.config import SEBI_DISCLAIMER
 from frontend.components.portfolio_charts import (
     render_portfolio_summary, render_allocation_pie, render_xirr_bar,
     render_overlap_heatmap, render_rebalancing_table,
@@ -611,7 +613,7 @@ def render_tax_analysis(tax: TaxRegimeComparison):
 # AI Insights Section
 # =============================================================================
 
-def render_ai_insights(report: FinalReport, analytics: PortfolioAnalytics):
+def render_ai_insights(report: FinalReport | None, analytics: PortfolioAnalytics | None):
     """AI-powered insights cards."""
     st.markdown(
         """<div class="section-header">
@@ -619,16 +621,65 @@ def render_ai_insights(report: FinalReport, analytics: PortfolioAnalytics):
             <p>Intelligent recommendations from the FinSage advisory engine</p>
         </div>""", unsafe_allow_html=True)
 
-    insights = [
-        ("💸", "#FF5C8A", "Cost Optimization",
-         f"Switching all Regular plans to Direct could save ₹{analytics.expense_ratio_drag_inr:,.0f}/year in expense ratio drag."),
-        ("🔄", "#635BFF", "Portfolio Overlap",
-         f"{len(analytics.overlap_matrix)} stocks appear across 3+ funds. Reducing ICICI Multicap by 50% lowers concentration risk."),
-        ("🎯", "#00D4AA", "FIRE Readiness",
-         f"Monthly SIP needs to increase from ₹35K to ₹50K to hit ₹4.5 Cr target by age 50."),
-        ("🏛️", "#FFBB38", "Tax Efficiency",
-         f"Old regime saves ₹{report.tax_analysis.savings_amount:,.0f}. Section 80TTA (₹10K) and 80G remain unclaimed."),
-    ]
+    insights = []
+    if analytics and analytics.expense_ratio_drag_inr > 0:
+        insights.append(
+            (
+                "💸",
+                "#FF5C8A",
+                "Cost Optimization",
+                f"Estimated annual expense drag versus lower-cost alternatives is ₹{analytics.expense_ratio_drag_inr:,.0f}.",
+            )
+        )
+
+    if analytics and analytics.overlap_matrix:
+        stock_name, stock_funds = max(
+            analytics.overlap_matrix.items(),
+            key=lambda item: (len(item[1]), sum(item[1].values())),
+        )
+        insights.append(
+            (
+                "🔄",
+                "#635BFF",
+                "Portfolio Overlap",
+                f"{stock_name} appears across {len(stock_funds)} funds, indicating concentration that may be worth reviewing.",
+            )
+        )
+
+    if report and report.fire_plan:
+        insights.append(
+            (
+                "🎯",
+                "#00D4AA",
+                "FIRE Readiness",
+                f"Required SIP is ₹{report.fire_plan.monthly_sip_required:,.0f}/month to target ₹{report.fire_plan.target_corpus:,.0f}.",
+            )
+        )
+
+    if report and report.tax_analysis:
+        insights.append(
+            (
+                "🏛️",
+                "#FFBB38",
+                "Tax Efficiency",
+                f"{report.tax_analysis.recommended_regime.upper()} regime is lower by ₹{report.tax_analysis.savings_amount:,.0f}.",
+            )
+        )
+
+    if report and report.health_score:
+        avg_score = sum(item.score for item in report.health_score) / len(report.health_score)
+        insights.append(
+            (
+                "🏥",
+                "#3B82F6",
+                "Health Score",
+                f"Overall money health score is {avg_score:.0f}/100 across {len(report.health_score)} dimensions.",
+            )
+        )
+
+    if not insights:
+        st.info("Run analysis to generate live portfolio, FIRE, tax, and health insights.")
+        return
 
     cols = st.columns(2)
     for i, (icon, color, title, text) in enumerate(insights):
@@ -649,6 +700,10 @@ def render_ai_insights(report: FinalReport, analytics: PortfolioAnalytics):
 
 def render_report_module(analytics, report):
     """Report preview + download with confirmation UX."""
+    if report is None:
+        st.info("Run analysis to unlock PDF report generation.")
+        return
+
     st.markdown("<div class='stripe-divider'></div>", unsafe_allow_html=True)
     st.markdown(
         """<div class="section-header">
@@ -713,6 +768,88 @@ def render_report_module(analytics, report):
         )
 
 
+def _build_user_profile(
+    age,
+    annual_income,
+    monthly_expenses,
+    retirement_age,
+    target_monthly,
+    risk_profile,
+    base_salary,
+    hra,
+    rent_paid,
+    sec80c,
+    nps,
+    home_loan,
+    medical,
+):
+    return UserFinancialProfile(
+        age=age,
+        annual_income=float(annual_income),
+        monthly_expenses=float(monthly_expenses),
+        existing_investments={"MF": 1800000, "PPF": 600000},
+        target_retirement_age=retirement_age,
+        target_monthly_corpus=float(target_monthly),
+        risk_profile=RiskProfile(risk_profile.lower()),
+        base_salary=float(base_salary),
+        hra_received=float(hra),
+        rent_paid=float(rent_paid),
+        section_80c=float(sec80c),
+        nps_contribution=float(nps),
+        home_loan_interest=float(home_loan) if home_loan else None,
+        medical_insurance_premium=float(medical),
+    )
+
+
+def _profile_signature(profile: UserFinancialProfile) -> str:
+    return json.dumps(profile.model_dump(mode="json"), sort_keys=True)
+
+
+def _coerce_report(final_data=None, advisory_data=None):
+    if final_data and isinstance(final_data, dict):
+        return FinalReport(**final_data)
+    if isinstance(final_data, FinalReport):
+        return final_data
+    if advisory_data and isinstance(advisory_data, dict):
+        return FinalReport(**advisory_data)
+    if isinstance(advisory_data, AdvisoryReport):
+        return FinalReport(**advisory_data.model_dump())
+    return None
+
+
+def _refresh_advisory_report(analytics, user_profile):
+    """Re-run advisory + compliance using cached analytics and the latest profile."""
+    from agents.advisory_agent import AdvisoryAgent
+    from agents.compliance_agent import ComplianceAgent
+
+    analytics_payload = analytics
+    if isinstance(analytics, PortfolioAnalytics):
+        analytics_payload = analytics.model_dump()
+
+    advisory_state = AdvisoryAgent().run({
+        "analytics": analytics_payload,
+        "user_profile": user_profile.model_dump(),
+        "errors": [],
+    })
+
+    advisory_data = advisory_state.get("advisory_report")
+    errors = advisory_state.get("errors", [])
+    report = _coerce_report(advisory_data=advisory_data)
+
+    if advisory_data:
+        compliance_state = ComplianceAgent().run({
+            "advisory_report": advisory_data,
+            "errors": errors.copy(),
+        })
+        report = _coerce_report(
+            final_data=compliance_state.get("final_report"),
+            advisory_data=advisory_data,
+        )
+        errors = compliance_state.get("errors", errors)
+
+    return report, errors
+
+
 # =============================================================================
 # Sidebar
 # =============================================================================
@@ -770,28 +907,62 @@ def render_sidebar():
         with st.expander("💰 Tax Details", expanded=False):
             base_salary = st.number_input("Base Salary (₹)", value=1800000, step=100000, format="%d", key="sal")
             hra = st.number_input("HRA (₹/yr)", value=360000, step=10000, format="%d", key="hra")
+            rent_paid = st.number_input("Rent Paid (₹/yr)", value=480000, step=10000, format="%d", key="rent")
             sec80c = st.number_input("80C (₹)", value=150000, step=10000, format="%d", key="80c")
             nps = st.number_input("NPS (₹)", value=50000, step=10000, format="%d", key="nps")
             home_loan = st.number_input("Home Loan (₹)", value=0, step=10000, format="%d", key="hl")
             medical = st.number_input("80D (₹)", value=25000, step=5000, format="%d", key="80d")
 
+        demo_mode = st.checkbox(
+            "Preview sample dashboard",
+            value=st.session_state.get("demo_mode", False),
+            help="Shows static sample analytics without running the live pipeline.",
+        )
+        st.session_state["demo_mode"] = demo_mode
+
+        current_profile = _build_user_profile(
+            age=age,
+            annual_income=annual_income,
+            monthly_expenses=monthly_expenses,
+            retirement_age=retirement_age,
+            target_monthly=target_monthly,
+            risk_profile=risk_profile,
+            base_salary=base_salary,
+            hra=hra,
+            rent_paid=rent_paid,
+            sec80c=sec80c,
+            nps=nps,
+            home_loan=home_loan,
+            medical=medical,
+        )
+        current_profile_signature = _profile_signature(current_profile)
+
         st.markdown("<div class='stripe-divider'></div>", unsafe_allow_html=True)
         run_clicked = st.button("🚀 Run Analysis", use_container_width=True, type="primary")
 
-        if run_clicked:
-            st.session_state["analysis_run"] = True
-            st.session_state["user_profile"] = UserFinancialProfile(
-                age=age, annual_income=float(annual_income), monthly_expenses=float(monthly_expenses),
-                existing_investments={"MF": 1800000, "PPF": 600000},
-                target_retirement_age=retirement_age, target_monthly_corpus=float(target_monthly),
-                risk_profile=RiskProfile(risk_profile.lower()),
-                base_salary=float(base_salary), hra_received=float(hra),
-                section_80c=float(sec80c), nps_contribution=float(nps),
-                home_loan_interest=float(home_loan) if home_loan else None,
-                medical_insurance_premium=float(medical),
-            )
+        st.caption("After the first live run, sidebar profile changes refresh the advisory output automatically.")
 
-        return uploaded_file
+        if run_clicked:
+            current_upload_key = None
+            if uploaded_file is not None:
+                current_upload_key = f"{uploaded_file.name}:{uploaded_file.size}"
+
+            for key in ["pipeline_analytics", "pipeline_report", "pipeline_errors"]:
+                st.session_state.pop(key, None)
+
+            st.session_state["analysis_run"] = True
+            st.session_state["last_upload_key"] = current_upload_key
+            st.session_state["user_profile"] = current_profile
+            st.session_state["user_profile_signature"] = current_profile_signature
+        elif st.session_state.get("analysis_run"):
+            previous_signature = st.session_state.get("user_profile_signature")
+            if previous_signature != current_profile_signature:
+                st.session_state["user_profile"] = current_profile
+                st.session_state["user_profile_signature"] = current_profile_signature
+                st.session_state.pop("pipeline_report", None)
+                st.session_state.pop("pipeline_errors", None)
+
+        return uploaded_file, current_profile
 
 
 # =============================================================================
@@ -836,16 +1007,7 @@ def _run_pipeline(uploaded_file, user_profile):
     final_data = result.get("final_report")
     advisory_data = result.get("advisory_report")
 
-    report = None
-    if final_data and isinstance(final_data, dict):
-        report = FinalReport(**final_data)
-    elif isinstance(final_data, FinalReport):
-        report = final_data
-    elif advisory_data and isinstance(advisory_data, dict):
-        report = FinalReport(**advisory_data)
-    elif isinstance(advisory_data, AdvisoryReport):
-        # Wrap AdvisoryReport as FinalReport
-        report = FinalReport(**advisory_data.model_dump())
+    report = _coerce_report(final_data=final_data, advisory_data=advisory_data)
 
     errors = result.get("errors", [])
     return analytics, report, errors
@@ -857,9 +1019,14 @@ def _run_pipeline(uploaded_file, user_profile):
 
 def main():
     st.markdown(_get_theme_css(), unsafe_allow_html=True)
-    uploaded_file = render_sidebar()
+    uploaded_file, current_profile = render_sidebar()
+    current_upload_key = None
+    if uploaded_file is not None:
+        current_upload_key = f"{uploaded_file.name}:{uploaded_file.size}"
 
-    # ── Header Bar ────────────────────────────────────────────────────
+    analytics = None
+    report = None
+
     st.markdown(
         """<div class="header-bar">
             <div class="header-brand">
@@ -867,22 +1034,31 @@ def main():
                 <span class="version-badge">beta</span>
             </div>
             <div class="header-right">
-                <div class="header-btn">🔔</div>
-                <div class="header-btn">⚙️ Settings</div>
+                <div class="header-btn">Alerts</div>
+                <div class="header-btn">Settings</div>
                 <div class="user-avatar">A</div>
             </div>
-        </div>""", unsafe_allow_html=True)
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
-    # ── Run Pipeline or Use Mock Data ─────────────────────────────────
     if st.session_state.get("analysis_run"):
-        user_profile = st.session_state.get("user_profile")
-        # Only re-run if we don't already have cached results
-        if "pipeline_analytics" not in st.session_state:
-            with st.spinner("🚀 Running FinSage pipeline — Parser → Analytics → Advisory → Compliance..."):
-                analytics, report, errors = _run_pipeline(uploaded_file, user_profile)
+        if st.session_state.get("last_upload_key") != current_upload_key:
+            for key in ["pipeline_analytics", "pipeline_report", "pipeline_errors"]:
+                st.session_state.pop(key, None)
+            st.session_state["last_upload_key"] = current_upload_key
 
-                # Cache results
+        user_profile = st.session_state.get("user_profile") or current_profile
+        if "pipeline_analytics" not in st.session_state:
+            with st.spinner("Running FinSage pipeline - Parser -> Analytics -> Advisory -> Compliance..."):
+                analytics, report, errors = _run_pipeline(uploaded_file, user_profile)
                 st.session_state["pipeline_analytics"] = analytics
+                st.session_state["pipeline_report"] = report
+                st.session_state["pipeline_errors"] = errors
+        elif "pipeline_report" not in st.session_state:
+            with st.spinner("Refreshing advisory output for the updated profile..."):
+                analytics = st.session_state.get("pipeline_analytics")
+                report, errors = _refresh_advisory_report(analytics, user_profile)
                 st.session_state["pipeline_report"] = report
                 st.session_state["pipeline_errors"] = errors
 
@@ -890,104 +1066,120 @@ def main():
         report = st.session_state.get("pipeline_report")
         errors = st.session_state.get("pipeline_errors", [])
 
-        # Fall back to mock only in explicit demo mode, not when a real upload failed to parse.
-        if analytics is None and uploaded_file is None:
-            analytics = _get_mock_analytics()
-            st.info("📄 No PDF uploaded — showing demo portfolio data. Upload a CAMS statement for real analysis.")
-        elif analytics is None and uploaded_file is not None:
+        if analytics is None and uploaded_file is not None:
             st.error(
                 f"Could not extract transactions from uploaded PDF `{uploaded_file.name}`. "
                 "Parser output was empty."
             )
+        elif analytics is None and uploaded_file is None:
+            st.info("Profile-only mode detected. FIRE and tax outputs are live; portfolio tabs need a CAMS PDF.")
 
-        if report is None and analytics is not None:
-            report = _get_mock_report()
-            st.warning("⚠️ Advisory pipeline failed — showing demo advisory data. Check your GEMINI_API_KEY in .env")
-        elif report is None and analytics is None and uploaded_file is not None:
-            st.warning("⚠️ Advisory report not generated because the uploaded PDF could not be parsed.")
+        if report is None and uploaded_file is not None:
+            st.warning("Advisory report not generated because the uploaded PDF could not be parsed.")
+        elif report is None:
+            st.error("Advisory pipeline did not return a report. Check your GEMINI configuration before the walkthrough.")
 
-        # Show pipeline errors if any
         if errors:
-            with st.expander(f"⚠️ Pipeline Warnings ({len(errors)})", expanded=False):
+            with st.expander(f"Pipeline Warnings ({len(errors)})", expanded=False):
                 for err in errors:
                     st.warning(err)
 
-        if analytics is None or report is None:
-            st.stop()
-
-        # Add a button to re-run
-        if st.sidebar.button("🔄 Re-run Analysis", use_container_width=True):
+        if st.sidebar.button("Re-run Analysis", use_container_width=True):
             for key in ["pipeline_analytics", "pipeline_report", "pipeline_errors", "analysis_run"]:
                 st.session_state.pop(key, None)
             st.rerun()
-    else:
-        # Show mock data until user clicks Run Analysis
+    elif st.session_state.get("demo_mode"):
         analytics = _get_mock_analytics()
         report = _get_mock_report()
         st.markdown(
             """<div class="insight-card" style="border-left:3px solid #635BFF; margin-bottom:20px;">
-                <span style="font-size:1.3em;">💡</span>
+                <span style="font-size:1.3em;">Demo</span>
                 <div>
-                    <div style="color:var(--text-primary); font-weight:600; font-size:0.95em;">Demo Mode</div>
+                    <div style="color:var(--text-primary); font-weight:600; font-size:0.95em;">Sample Dashboard Mode</div>
                     <div style="color:var(--text-muted); font-size:0.85em;">
-                        You're viewing sample data. Upload a CAMS PDF & fill your profile in the sidebar, then click
-                        <strong style="color:#635BFF;">🚀 Run Analysis</strong> for personalized insights.
+                        These cards are static sample data for UI preview only. Click
+                        <strong style="color:#635BFF;">Run Analysis</strong> to switch to live pipeline output.
                     </div>
                 </div>
-            </div>""", unsafe_allow_html=True)
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            """<div class="insight-card" style="border-left:3px solid #00D4AA; margin-bottom:20px;">
+                <span style="font-size:1.3em;">Run</span>
+                <div>
+                    <div style="color:var(--text-primary); font-weight:600; font-size:0.95em;">Ready For Validation</div>
+                    <div style="color:var(--text-muted); font-size:0.85em;">
+                        Fill the sidebar profile, optionally upload a CAMS statement, then run the live pipeline.
+                        Portfolio tabs require a PDF; FIRE and tax can be validated profile-only.
+                    </div>
+                </div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+        st.stop()
 
-    # ── Tab Navigation ────────────────────────────────────────────────
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📊 Portfolio", "🔄 Rebalancing", "🔥 FIRE Planner", "💰 Tax Optimizer", "🏥 Health Score",
+        "Portfolio", "Rebalancing", "FIRE Planner", "Tax Optimizer", "Health Score",
     ])
 
     with tab1:
         st.markdown(
             """<div class="section-header">
-                <h2>📊 Portfolio X-Ray</h2>
+                <h2>Portfolio X-Ray</h2>
                 <p>Deep analysis of your mutual fund portfolio performance</p>
-            </div>""", unsafe_allow_html=True)
-        render_portfolio_summary(analytics)
-        st.markdown("<div class='stripe-divider'></div>", unsafe_allow_html=True)
+            </div>""",
+            unsafe_allow_html=True,
+        )
+        if analytics is None:
+            st.info("Upload a CAMS statement and run analysis to see portfolio analytics.")
+        else:
+            render_portfolio_summary(analytics)
+            st.markdown("<div class='stripe-divider'></div>", unsafe_allow_html=True)
 
-        col_l, col_r = st.columns([1, 1])
-        with col_l:
-            render_allocation_pie(analytics)
-        with col_r:
-            render_xirr_bar(analytics)
+            col_l, col_r = st.columns([1, 1])
+            with col_l:
+                render_allocation_pie(analytics)
+            with col_r:
+                render_xirr_bar(analytics)
 
-        st.markdown("<div class='stripe-divider'></div>", unsafe_allow_html=True)
-        render_overlap_heatmap(analytics)
+            st.markdown("<div class='stripe-divider'></div>", unsafe_allow_html=True)
+            render_overlap_heatmap(analytics)
 
     with tab2:
         st.markdown(
             """<div class="section-header">
-                <h2>🔄 Smart Rebalancing</h2>
+                <h2>Smart Rebalancing</h2>
                 <p>Fund-specific recommendations with tax-aware context</p>
-            </div>""", unsafe_allow_html=True)
-        render_rebalancing_table(report.rebalancing_plan)
+            </div>""",
+            unsafe_allow_html=True,
+        )
+        if report is None:
+            st.info("Run analysis to generate rebalancing actions.")
+        else:
+            render_rebalancing_table(report.rebalancing_plan)
 
     with tab3:
-        render_fire_planner(report.fire_plan, st.session_state.get("user_profile"))
+        render_fire_planner(report.fire_plan if report else None, st.session_state.get("user_profile"))
 
     with tab4:
-        render_tax_analysis(report.tax_analysis)
+        render_tax_analysis(report.tax_analysis if report else None)
 
     with tab5:
-        render_health_score(report.health_score)
+        render_health_score(report.health_score if report else [])
 
-    # ── AI Insights ───────────────────────────────────────────────────
     st.markdown("<div class='stripe-divider'></div>", unsafe_allow_html=True)
     render_ai_insights(report, analytics)
 
-    # ── Report Preview & Download ─────────────────────────────────────
     render_report_module(analytics, report)
 
-    # ── Footer ────────────────────────────────────────────────────────
     st.markdown(
         f"""<div class="app-footer">
-            <p>{report.disclaimer}</p>
-        </div>""", unsafe_allow_html=True)
+            <p>{(report.disclaimer if report and report.disclaimer else SEBI_DISCLAIMER)}</p>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":

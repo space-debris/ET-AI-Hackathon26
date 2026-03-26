@@ -108,7 +108,7 @@ class AdvisoryAgent:
         for attempt in range(config.MAX_RETRIES):
             try:
                 response = self.llm.invoke(messages)
-                return response.content
+                return self._coerce_response_text(response.content)
             except Exception as e:
                 logger.warning(f"LLM call attempt {attempt + 1} failed: {e}")
                 if attempt == config.MAX_RETRIES - 1:
@@ -117,6 +117,28 @@ class AdvisoryAgent:
                     )
                 import time
                 time.sleep(config.RETRY_DELAY_SECONDS * (attempt + 1))
+
+    @staticmethod
+    def _coerce_response_text(content: Any) -> str:
+        """Normalize LangChain/Gemini content blocks into a single text payload."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                    continue
+                if isinstance(item, dict):
+                    text = item.get("text") or item.get("content") or ""
+                    if text:
+                        parts.append(str(text))
+                    continue
+                text = getattr(item, "text", None) or getattr(item, "content", None)
+                if text:
+                    parts.append(str(text))
+            return "".join(part for part in parts if part).strip()
+        return str(content)
 
     def _parse_json_response(self, response: str) -> dict:
         """
@@ -134,8 +156,50 @@ class AdvisoryAgent:
         try:
             return json.loads(text)
         except json.JSONDecodeError as e:
+            sanitized = self._sanitize_json_text(text)
+            if sanitized != text:
+                try:
+                    return json.loads(sanitized)
+                except json.JSONDecodeError:
+                    pass
+
             logger.error(f"Failed to parse LLM JSON response: {e}\nRaw: {text[:500]}")
             raise ValueError(f"LLM returned invalid JSON: {e}")
+
+    @staticmethod
+    def _sanitize_json_text(text: str) -> str:
+        """
+        Best-effort cleanup for malformed LLM JSON.
+
+        Gemini occasionally emits literal newlines or tabs inside quoted strings,
+        which breaks strict JSON parsing even when the overall payload is recoverable.
+        """
+        cleaned = []
+        in_string = False
+        escaped = False
+
+        for char in text:
+            if char == '"' and not escaped:
+                in_string = not in_string
+                cleaned.append(char)
+                continue
+
+            if in_string and char in {"\n", "\r", "\t"}:
+                cleaned.append({
+                    "\n": "\\n",
+                    "\r": "\\r",
+                    "\t": "\\t",
+                }[char])
+                escaped = False
+                continue
+
+            cleaned.append(char)
+            if char == "\\" and not escaped:
+                escaped = True
+            else:
+                escaped = False
+
+        return "".join(cleaned)
 
     # =========================================================================
     # 1. REBALANCING PLAN
@@ -211,17 +275,25 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
             parsed = [parsed]
 
         actions = []
+        valid_fund_names = {holding.fund_name for holding in analytics.holdings}
         for item in parsed:
             try:
+                fund_name = item.get("fund_name")
+                if not fund_name or fund_name not in valid_fund_names:
+                    logger.warning(
+                        "Skipping rebalancing action for unknown holding: %s",
+                        fund_name,
+                    )
+                    continue
                 action_type = item.get("action", "hold").lower()
                 actions.append(RebalancingAction(
-                    fund_name=item["fund_name"],
+                    fund_name=fund_name,
                     action=RebalancingActionType(action_type),
                     percentage=item.get("percentage"),
                     amount_inr=item.get("amount_inr"),
                     target_fund=item.get("target_fund"),
-                    tax_impact=item.get("tax_impact", ""),
-                    rationale=item.get("rationale", ""),
+                    tax_impact=item.get("tax_impact") or "",
+                    rationale=item.get("rationale") or "",
                     priority=item.get("priority", 3),
                 ))
             except Exception as e:
@@ -270,19 +342,7 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
         milestones = []
         for m in parsed.get("milestones", []):
             try:
-                milestones.append(FIREMilestone(
-                    month=m.get("month", 1),
-                    year=m.get("year", 2026),
-                    equity_sip=m.get("equity_sip", 0),
-                    debt_sip=m.get("debt_sip", 0),
-                    gold_sip=m.get("gold_sip", 0),
-                    total_sip=m.get("total_sip", 0),
-                    projected_corpus=m.get("projected_corpus", 0),
-                    equity_pct=m.get("equity_pct", 0),
-                    debt_pct=m.get("debt_pct", 0),
-                    gold_pct=m.get("gold_pct", 0),
-                    notes=m.get("notes"),
-                ))
+                milestones.append(self._coerce_fire_milestone(m))
             except Exception as e:
                 logger.warning(f"Failed to parse FIRE milestone: {e}")
 
@@ -305,6 +365,46 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
                 "swr": config.SAFE_WITHDRAWAL_RATE,
             }),
             at_current_trajectory=parsed.get("at_current_trajectory"),
+        )
+
+    @staticmethod
+    def _coerce_fire_milestone(milestone: dict) -> FIREMilestone:
+        """
+        Accept a few common LLM variants for milestone month/year fields.
+
+        Models sometimes emit relative years (1, 5, 10) or combined date strings
+        like "2024-07" instead of the strict schema.
+        """
+        current_year = datetime.now().year
+        raw_month = milestone.get("month", 1)
+        raw_year = milestone.get("year", current_year)
+
+        if isinstance(raw_year, str):
+            raw_year = raw_year.strip()
+            if len(raw_year) >= 7 and raw_year[4] == "-" and raw_year[:4].isdigit():
+                if "month" not in milestone:
+                    raw_month = raw_year[5:7]
+                raw_year = raw_year[:4]
+
+        month = int(raw_month) if str(raw_month).strip() else 1
+        year = int(raw_year) if str(raw_year).strip() else current_year
+
+        if year < 100:
+            year = current_year + max(year - 1, 0)
+        month = min(max(month, 1), 12)
+
+        return FIREMilestone(
+            month=month,
+            year=year,
+            equity_sip=milestone.get("equity_sip", 0),
+            debt_sip=milestone.get("debt_sip", 0),
+            gold_sip=milestone.get("gold_sip", 0),
+            total_sip=milestone.get("total_sip", 0),
+            projected_corpus=milestone.get("projected_corpus", 0),
+            equity_pct=milestone.get("equity_pct", 0),
+            debt_pct=milestone.get("debt_pct", 0),
+            gold_pct=milestone.get("gold_pct", 0),
+            notes=milestone.get("notes"),
         )
 
     # =========================================================================
