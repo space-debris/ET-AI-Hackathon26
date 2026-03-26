@@ -1,0 +1,9 @@
+export { DashboardPage } from './Dashboard';
+export { UploadPage } from './Upload';
+export { PortfolioPage } from './Portfolio';
+export { FIREPlannerPage } from './FIREPlanner';
+export { TaxOptimizerPage } from './TaxOptimizer';
+export { HealthScorePage } from './HealthScore';
+export { RecommendationsPage } from './Recommendations';
+export { SettingsPage } from './Settings';
+export { HelpPage } from './Help';
