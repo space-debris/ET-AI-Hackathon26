@@ -795,6 +795,63 @@ def render_sidebar():
 
 
 # =============================================================================
+# Pipeline Integration
+# =============================================================================
+
+import tempfile
+import os
+
+def _run_pipeline(uploaded_file, user_profile):
+    """Run the FinSage orchestrator pipeline and return (analytics, report)."""
+    from agents.orchestrator import FinSageOrchestrator
+
+    # Save uploaded PDF to temp file if provided
+    pdf_path = None
+    if uploaded_file is not None:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(uploaded_file.getbuffer())
+            pdf_path = tmp.name
+
+    try:
+        orchestrator = FinSageOrchestrator()
+        result = orchestrator.run_pipeline(
+            pdf_path=pdf_path,
+            user_profile=user_profile,
+        )
+    finally:
+        # Clean up temp file
+        if pdf_path and os.path.exists(pdf_path):
+            os.unlink(pdf_path)
+
+    # Extract analytics
+    analytics_data = result.get("analytics")
+    if analytics_data and isinstance(analytics_data, dict):
+        analytics = PortfolioAnalytics(**analytics_data)
+    elif isinstance(analytics_data, PortfolioAnalytics):
+        analytics = analytics_data
+    else:
+        analytics = None
+
+    # Extract final report (compliance-cleared) or advisory report
+    final_data = result.get("final_report")
+    advisory_data = result.get("advisory_report")
+
+    report = None
+    if final_data and isinstance(final_data, dict):
+        report = FinalReport(**final_data)
+    elif isinstance(final_data, FinalReport):
+        report = final_data
+    elif advisory_data and isinstance(advisory_data, dict):
+        report = FinalReport(**advisory_data)
+    elif isinstance(advisory_data, AdvisoryReport):
+        # Wrap AdvisoryReport as FinalReport
+        report = FinalReport(**advisory_data.model_dump())
+
+    errors = result.get("errors", [])
+    return analytics, report, errors
+
+
+# =============================================================================
 # Main App
 # =============================================================================
 
@@ -816,9 +873,68 @@ def main():
             </div>
         </div>""", unsafe_allow_html=True)
 
-    # Load data
-    analytics = _get_mock_analytics()
-    report = _get_mock_report()
+    # ── Run Pipeline or Use Mock Data ─────────────────────────────────
+    if st.session_state.get("analysis_run"):
+        user_profile = st.session_state.get("user_profile")
+        # Only re-run if we don't already have cached results
+        if "pipeline_analytics" not in st.session_state:
+            with st.spinner("🚀 Running FinSage pipeline — Parser → Analytics → Advisory → Compliance..."):
+                analytics, report, errors = _run_pipeline(uploaded_file, user_profile)
+
+                # Cache results
+                st.session_state["pipeline_analytics"] = analytics
+                st.session_state["pipeline_report"] = report
+                st.session_state["pipeline_errors"] = errors
+
+        analytics = st.session_state.get("pipeline_analytics")
+        report = st.session_state.get("pipeline_report")
+        errors = st.session_state.get("pipeline_errors", [])
+
+        # Fall back to mock only in explicit demo mode, not when a real upload failed to parse.
+        if analytics is None and uploaded_file is None:
+            analytics = _get_mock_analytics()
+            st.info("📄 No PDF uploaded — showing demo portfolio data. Upload a CAMS statement for real analysis.")
+        elif analytics is None and uploaded_file is not None:
+            st.error(
+                f"Could not extract transactions from uploaded PDF `{uploaded_file.name}`. "
+                "Parser output was empty."
+            )
+
+        if report is None and analytics is not None:
+            report = _get_mock_report()
+            st.warning("⚠️ Advisory pipeline failed — showing demo advisory data. Check your GEMINI_API_KEY in .env")
+        elif report is None and analytics is None and uploaded_file is not None:
+            st.warning("⚠️ Advisory report not generated because the uploaded PDF could not be parsed.")
+
+        # Show pipeline errors if any
+        if errors:
+            with st.expander(f"⚠️ Pipeline Warnings ({len(errors)})", expanded=False):
+                for err in errors:
+                    st.warning(err)
+
+        if analytics is None or report is None:
+            st.stop()
+
+        # Add a button to re-run
+        if st.sidebar.button("🔄 Re-run Analysis", use_container_width=True):
+            for key in ["pipeline_analytics", "pipeline_report", "pipeline_errors", "analysis_run"]:
+                st.session_state.pop(key, None)
+            st.rerun()
+    else:
+        # Show mock data until user clicks Run Analysis
+        analytics = _get_mock_analytics()
+        report = _get_mock_report()
+        st.markdown(
+            """<div class="insight-card" style="border-left:3px solid #635BFF; margin-bottom:20px;">
+                <span style="font-size:1.3em;">💡</span>
+                <div>
+                    <div style="color:var(--text-primary); font-weight:600; font-size:0.95em;">Demo Mode</div>
+                    <div style="color:var(--text-muted); font-size:0.85em;">
+                        You're viewing sample data. Upload a CAMS PDF & fill your profile in the sidebar, then click
+                        <strong style="color:#635BFF;">🚀 Run Analysis</strong> for personalized insights.
+                    </div>
+                </div>
+            </div>""", unsafe_allow_html=True)
 
     # ── Tab Navigation ────────────────────────────────────────────────
     tab1, tab2, tab3, tab4, tab5 = st.tabs([

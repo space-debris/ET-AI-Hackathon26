@@ -134,7 +134,7 @@ def advisory_agent():
     with patch("agents.advisory_agent.ChatGoogleGenerativeAI"):
         from agents.advisory_agent import AdvisoryAgent
         agent = AdvisoryAgent.__new__(AdvisoryAgent)
-        agent.model_name = "gemini-1.5-flash"
+        agent.model_name = "gemini-2.5-flash-lite"
         agent.llm = MagicMock()
         agent.system_prompt = "You are a test system."
         agent.fire_prompt_template = "Test FIRE prompt for age {age}"

@@ -42,3 +42,28 @@ class TestParserAgent:
         assert result["raw_text"] == mock_text
         assert len(result["transactions"]) == 1
         assert result["transactions"][0]["fund_name"] == "SBI Bluechip Fund"
+
+    def test_extract_transactions_parses_cams_table_layout(self):
+        agent = ParserAgent()
+        raw_text = (
+            "SBI Bluechip Fund - Regular Plan - Growth\n"
+            "AMC SBI Mutual Fund Folio No. 1158702/09\n"
+            "Registrar CAMS Plan / Option Regular / Growth\n"
+            "Date Transaction Type Amount (?) Units NAV Unit Balance\n"
+            "07-Apr-2023 SIP 12,000.00 195.440 61.40 195.440\n"
+            "07-May-2023 SIP 12,000.00 190.870 62.87 386.310\n"
+            "HDFC Short Term Debt Fund - Regular Plan - Growth\n"
+            "AMC HDFC Mutual Fund Folio No. 8204761/31\n"
+            "20-Apr-2023 Purchase 50,000.00 1937.984 25.80 1937.984"
+        )
+
+        transactions = agent.extract_transactions(raw_text)
+
+        assert len(transactions) == 3
+        assert transactions[0].fund_name == "SBI Bluechip Fund - Regular Plan - Growth"
+        assert transactions[0].amc == "SBI Mutual Fund"
+        assert transactions[0].folio_number == "1158702/09"
+        assert transactions[0].transaction_type == TransactionType.SIP
+        assert transactions[0].date == date(2023, 4, 7)
+        assert transactions[2].fund_name == "HDFC Short Term Debt Fund - Regular Plan - Growth"
+        assert transactions[2].transaction_type == TransactionType.PURCHASE
