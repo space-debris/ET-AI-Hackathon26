@@ -90,29 +90,44 @@ export function PortfolioPage() {
 
   if (!portfolio) {
     return (
-      <div className="space-y-6">
-        <RuntimeNotice
+      <motion.div
+        variants={container}
+        initial="hidden"
+        animate="show"
+        className="space-y-6"
+      >
+        <motion.div variants={item} className="space-y-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Portfolio Analysis</h1>
+            <p className="mt-1 text-gray-500">
+              Explore your holdings, returns, overlap, and cost drag after you upload a statement.
+            </p>
+          </div>
+          <RuntimeNotice
           title={
             runtimeConfig.demoModeEnabled
               ? 'Demo mode is enabled for portfolio analytics.'
-              : 'Portfolio analytics need a processed statement.'
+              : 'Upload a statement to unlock portfolio analysis.'
           }
           description={
             runtimeConfig.demoModeEnabled
               ? 'Synthetic portfolio data is shown only because demo mode is explicitly enabled.'
-              : error || 'Upload and process a CAMS or KFintech PDF before this page can render live analytics.'
+              : error || 'Import your CAMS or KFintech PDF to see holdings, XIRR, overlap, and expense insights here.'
           }
-          variant={runtimeConfig.demoModeEnabled ? 'demo' : error ? 'error' : 'live'}
+          variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
         />
+        </motion.div>
+        <motion.div variants={item}>
         <Card>
           <CardContent>
             <EmptyState
               title="No portfolio analysis available"
-              description="This page does not invent holdings or returns before a statement is parsed."
+              description="Upload and process your statement to see your funds, returns, overlap, and expense drag."
             />
           </CardContent>
         </Card>
-      </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
@@ -142,8 +157,8 @@ export function PortfolioPage() {
             onClick={handleDownloadReport}
             title={
               reportReady
-                ? 'Download the real report generated for this session.'
-                : 'Report download stays disabled until a real backend report object exists.'
+                ? 'Download your latest portfolio report.'
+                : 'Generate your analysis first to download a report.'
             }
           >
             {downloading ? 'Preparing Report...' : 'Export PDF'}
@@ -153,12 +168,12 @@ export function PortfolioPage() {
           title={
             runtimeConfig.demoModeEnabled
               ? 'Demo mode is enabled for this page.'
-              : 'This page reflects portfolio analytics only after statement processing succeeds.'
+              : 'Your latest statement powers the insights on this page.'
           }
           description={
             runtimeConfig.demoModeEnabled
               ? 'The numbers on this page are synthetic because demo mode was explicitly enabled.'
-              : 'If parsing or analytics fail, the page remains empty instead of silently swapping to sample holdings.'
+              : 'Review your allocation, fund performance, stock overlap, and annual cost drag in one place.'
           }
           variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
         />

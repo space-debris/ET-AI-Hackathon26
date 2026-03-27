@@ -136,21 +136,6 @@ export function Sidebar({ collapsed, setCollapsed }) {
         ))}
       </div>
 
-      {/* User Section */}
-      {!collapsed && (
-        <div className="p-4 border-t border-gray-100/80">
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50/80">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">
-              A
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900 truncate">Ayush</p>
-              <p className="text-xs text-gray-500 truncate">Free Plan</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Collapse Button */}
       <motion.button
         whileHover={{ scale: 1.1 }}

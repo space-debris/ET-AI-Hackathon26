@@ -169,6 +169,11 @@ def _run_tax_only(profile: UserFinancialProfile) -> tuple[Any, list[str]]:
     return tax_analysis, []
 
 
+def _run_fire_only(profile: UserFinancialProfile) -> tuple[Any, list[str]]:
+    fire_plan = AdvisoryAgent().generate_fire_plan(profile)
+    return fire_plan, []
+
+
 def _ensure_report(session: dict[str, Any]) -> tuple[Optional[FinalReport | AdvisoryReport], list[str]]:
     analytics = session.get("analytics")
     profile = session.get("user_profile")
@@ -355,20 +360,15 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
         profile = self._profile_from_payload(payload)
         session["user_profile"] = profile
         session["user_profile_signature"] = _profile_signature(profile)
-
-        if session.get("analytics") is not None:
-            report, errors = _run_report_from_cached_analytics(session["analytics"], profile)
-        else:
-            _, report, errors = _run_profile_only(profile)
-
-        session["report"] = report
+        session["report"] = None
+        fire_plan, errors = _run_fire_only(profile)
         session["errors"] = errors
 
-        if report is None or report.fire_plan is None:
+        if fire_plan is None:
             error_text = errors[-1] if errors else "FIRE plan generation failed."
             raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, error_text)
 
-        return {"fire_plan": report.fire_plan}
+        return {"fire_plan": fire_plan}
 
     def _handle_tax(self, session: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         profile = self._profile_from_payload(payload)

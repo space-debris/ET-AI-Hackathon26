@@ -11,7 +11,7 @@ import {
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const DEMO_MODE_ENABLED =
   String(import.meta.env.VITE_ENABLE_DEMO_MODE || '').toLowerCase() === 'true';
-const SESSION_STORAGE_KEY = 'finsage-session-id';
+const SESSION_STORAGE_KEY = 'finsage-session-id-v2';
 
 const getStoredSessionId = () => {
   if (typeof window === 'undefined') {
@@ -168,6 +168,28 @@ const normalizeInsuranceGap = (insuranceGap) => {
   };
 };
 
+const formatExpectedRetirementDate = (value) => {
+  if (!value || typeof value !== 'string') {
+    return value;
+  }
+
+  const match = value.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+  if (!match) {
+    return value;
+  }
+
+  const [, year, month] = match;
+  const parsedMonth = Number.parseInt(month, 10);
+  if (Number.isNaN(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) {
+    return year;
+  }
+
+  return new Date(Number.parseInt(year, 10), parsedMonth - 1, 1).toLocaleString('en-IN', {
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
 const normalizeFirePlan = (payload) => {
   const fire =
     payload?.fire ??
@@ -194,10 +216,12 @@ const normalizeFirePlan = (payload) => {
       summary.years_to_fire ??
       null,
     expectedRetirementDate:
-      fire.expectedRetirementDate ??
-      fire.expected_retirement_date ??
-      summary.expectedRetirementDate ??
-      null,
+      formatExpectedRetirementDate(
+        fire.expectedRetirementDate ??
+        fire.expected_retirement_date ??
+        summary.expectedRetirementDate ??
+        null
+      ),
     monthlySipRequired:
       fire.monthlySipRequired ??
       fire.monthly_sip_required ??
@@ -425,6 +449,13 @@ export const portfolioApi = {
       const response = await api.get('/portfolio/analytics');
       return normalizePortfolioAnalytics(response.data);
     } catch (error) {
+      if (error?.response?.status === 404) {
+        const noDataError = new Error(
+          'Upload and process a CAMS or KFintech statement first to see your portfolio insights.'
+        );
+        noDataError.code = 404;
+        throw noDataError;
+      }
       throw withApiErrorContext('Portfolio analytics unavailable.', error);
     }
   },
@@ -441,6 +472,9 @@ export const portfolioApi = {
         normalizeRebalancingAction
       );
     } catch (error) {
+      if (error?.response?.status === 404) {
+        throw new Error('Upload and analyse your statement first to see rebalancing suggestions, tax context, and next steps.');
+      }
       throw withApiErrorContext('Rebalancing recommendations unavailable.', error);
     }
   },
@@ -463,7 +497,9 @@ export const fireApi = {
     }
 
     try {
-      const response = await api.post('/fire/generate', toBackendProfile(profile));
+      const response = await api.post('/fire/generate', toBackendProfile(profile), {
+        timeout: 90000,
+      });
       return normalizeFirePlan(response.data);
     } catch (error) {
       throw withApiErrorContext('FIRE plan generation failed.', error);
@@ -489,7 +525,9 @@ export const fireApi = {
     }
 
     try {
-      const response = await api.put('/fire/update', toBackendProfile(updatedProfile));
+      const response = await api.put('/fire/update', toBackendProfile(updatedProfile), {
+        timeout: 90000,
+      });
       return normalizeFirePlan(response.data);
     } catch (error) {
       throw withApiErrorContext('FIRE plan update failed.', error);
@@ -545,6 +583,9 @@ export const healthApi = {
       const response = await api.get('/health/score');
       return normalizeHealthScore(response.data);
     } catch (error) {
+      if (error?.response?.status === 404) {
+        throw new Error('Upload and analyse a statement first to generate your score, risk signals, and focus areas.');
+      }
       throw withApiErrorContext('Health score unavailable.', error);
     }
   },

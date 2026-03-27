@@ -40,6 +40,39 @@ const riskProfiles = [
   { value: 'aggressive', label: 'Aggressive' },
 ];
 
+const hasMeaningfulFireProfile = (savedProfile) => (
+  (savedProfile?.age ?? 0) > 0 ||
+  (savedProfile?.annualIncome ?? 0) > 0 ||
+  (savedProfile?.monthlyExpenses ?? 0) > 0 ||
+  (savedProfile?.existingInvestments ?? 0) > 0 ||
+  (savedProfile?.targetRetirementAge ?? 0) > 0 ||
+  (savedProfile?.targetMonthlyCorpus ?? 0) > 0
+);
+
+const mergeFireProfile = (defaults, savedProfile) => ({
+  ...defaults,
+  age: (savedProfile?.age ?? 0) > 0 ? savedProfile.age : defaults.age,
+  annualIncome:
+    (savedProfile?.annualIncome ?? 0) > 0 ? savedProfile.annualIncome : defaults.annualIncome,
+  monthlyExpenses:
+    (savedProfile?.monthlyExpenses ?? 0) > 0
+      ? savedProfile.monthlyExpenses
+      : defaults.monthlyExpenses,
+  existingInvestments:
+    (savedProfile?.existingInvestments ?? 0) > 0
+      ? savedProfile.existingInvestments
+      : defaults.existingInvestments,
+  targetRetirementAge:
+    (savedProfile?.targetRetirementAge ?? 0) > 0
+      ? savedProfile.targetRetirementAge
+      : defaults.targetRetirementAge,
+  targetMonthlyCorpus:
+    (savedProfile?.targetMonthlyCorpus ?? 0) > 0
+      ? savedProfile.targetMonthlyCorpus
+      : defaults.targetMonthlyCorpus,
+  riskProfile: savedProfile?.riskProfile ?? defaults.riskProfile,
+});
+
 export function FIREPlannerPage() {
   const [updating, setUpdating] = useState(false);
   const [firePlan, setFirePlan] = useState(null);
@@ -48,12 +81,12 @@ export function FIREPlannerPage() {
   const hydratingProfile = useRef(true);
   const lastSyncedProfile = useRef('');
   const [profile, setProfile] = useState({
-    age: 32,
-    annualIncome: 1800000,
-    monthlyExpenses: 60000,
-    existingInvestments: 1600000,
+    age: 34,
+    annualIncome: 2400000,
+    monthlyExpenses: 80000,
+    existingInvestments: 2400000,
     targetRetirementAge: 50,
-    targetMonthlyCorpus: 100000,
+    targetMonthlyCorpus: 150000,
     riskProfile: 'moderate',
   });
 
@@ -67,13 +100,10 @@ export function FIREPlannerPage() {
     async function hydrateProfile() {
       try {
         const savedProfile = await userApi.getProfile();
-        if (!active || !savedProfile) {
+        if (!active || !savedProfile || !hasMeaningfulFireProfile(savedProfile)) {
           return;
         }
-        setProfile((prev) => ({
-          ...prev,
-          ...savedProfile,
-        }));
+        setProfile((prev) => mergeFireProfile(prev, savedProfile));
       } catch {
         // Keep the default validation profile if no session profile exists yet.
       } finally {
@@ -134,7 +164,7 @@ export function FIREPlannerPage() {
       } finally {
         setUpdating(false);
       }
-    }, 500);
+    }, 900);
 
     return () => window.clearTimeout(timer);
   }, [profile, updating]);
@@ -160,7 +190,7 @@ export function FIREPlannerPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">FIRE Planner</h1>
             <p className="text-gray-500">
-              Financial Independence, Retire Early - plan from profile inputs only.
+              Build your retirement roadmap using profile details only.
             </p>
           </div>
         </div>
@@ -171,12 +201,12 @@ export function FIREPlannerPage() {
           title={
             runtimeConfig.demoModeEnabled
               ? 'Demo mode is enabled for FIRE planning.'
-              : 'Profile-only mode is available without a statement upload.'
+              : 'You can plan for FIRE without uploading a statement.'
           }
           description={
             runtimeConfig.demoModeEnabled
               ? 'This page uses explicit synthetic data only when VITE_ENABLE_DEMO_MODE=true.'
-              : 'Results stay blank until you generate a plan. If the backend is unavailable, the failure is shown directly.'
+              : 'Fill in your age, income, expenses, and target retirement age to generate a personalised plan.'
           }
           variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
         />
@@ -189,53 +219,53 @@ export function FIREPlannerPage() {
         )}
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <motion.div variants={item}>
-          <Card className="sticky top-6">
-            <CardHeader>
-              <CardTitle>Your Profile</CardTitle>
-              <CardDescription>
-                After the first successful run, profile changes refresh the FIRE plan automatically.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <Input
-                label="Current Age"
-                type="number"
-                value={profile.age}
-                onChange={(e) => handleProfileChange('age', parseInt(e.target.value, 10) || 0)}
-              />
+      <motion.div variants={item}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Your Profile</CardTitle>
+            <CardDescription>
+              Once you generate a plan, future profile changes refresh the output automatically.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Input
+              label="Current Age"
+              type="number"
+              value={profile.age}
+              onChange={(e) => handleProfileChange('age', parseInt(e.target.value, 10) || 0)}
+            />
 
-              <Input
-                label="Annual Income (INR)"
-                type="number"
-                value={profile.annualIncome}
-                onChange={(e) =>
-                  handleProfileChange('annualIncome', parseInt(e.target.value, 10) || 0)
-                }
-              />
+            <Input
+              label="Annual Income (INR)"
+              type="number"
+              value={profile.annualIncome}
+              onChange={(e) =>
+                handleProfileChange('annualIncome', parseInt(e.target.value, 10) || 0)
+              }
+            />
 
-              <Input
-                label="Monthly Expenses (INR)"
-                type="number"
-                value={profile.monthlyExpenses}
-                onChange={(e) =>
-                  handleProfileChange('monthlyExpenses', parseInt(e.target.value, 10) || 0)
-                }
-              />
+            <Input
+              label="Monthly Expenses (INR)"
+              type="number"
+              value={profile.monthlyExpenses}
+              onChange={(e) =>
+                handleProfileChange('monthlyExpenses', parseInt(e.target.value, 10) || 0)
+              }
+            />
 
-              <Input
-                label="Existing Investments (INR)"
-                type="number"
-                value={profile.existingInvestments}
-                onChange={(e) =>
-                  handleProfileChange(
-                    'existingInvestments',
-                    parseInt(e.target.value, 10) || 0
-                  )
-                }
-              />
+            <Input
+              label="Existing Investments (INR)"
+              type="number"
+              value={profile.existingInvestments}
+              onChange={(e) =>
+                handleProfileChange(
+                  'existingInvestments',
+                  parseInt(e.target.value, 10) || 0
+                )
+              }
+            />
 
+            <div className="md:col-span-2 xl:col-span-2">
               <Slider
                 label="Target Retirement Age"
                 value={profile.targetRetirementAge}
@@ -245,39 +275,44 @@ export function FIREPlannerPage() {
                 step={1}
                 formatValue={(value) => `${value} years`}
               />
+            </div>
 
-              <Input
-                label="Target Monthly Income (Post-retirement)"
-                type="number"
-                value={profile.targetMonthlyCorpus}
-                onChange={(e) =>
-                  handleProfileChange(
-                    'targetMonthlyCorpus',
-                    parseInt(e.target.value, 10) || 0
-                  )
-                }
-              />
+            <Input
+              label="Target Monthly Need (INR)"
+              type="number"
+              value={profile.targetMonthlyCorpus}
+              onChange={(e) =>
+                handleProfileChange(
+                  'targetMonthlyCorpus',
+                  parseInt(e.target.value, 10) || 0
+                )
+              }
+              hint="Post-retirement monthly need"
+            />
 
-              <Select
-                label="Risk Profile"
-                value={profile.riskProfile}
-                onChange={(e) => handleProfileChange('riskProfile', e.target.value)}
-                options={riskProfiles}
-              />
+            <Select
+              label="Risk Profile"
+              value={profile.riskProfile}
+              name="riskProfile"
+              onChange={(e) => handleProfileChange('riskProfile', e.target.value)}
+              options={riskProfiles}
+            />
 
+            <div className="md:col-span-2 xl:col-span-4 flex justify-end">
               <Button
-                className="w-full"
+                className="w-full md:w-auto"
                 onClick={handleRunPlan}
                 loading={updating}
                 icon={RefreshCw}
               >
                 {firePlan ? 'Recompute Plan' : 'Generate Plan'}
               </Button>
-            </CardContent>
-          </Card>
-        </motion.div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-        <div className="lg:col-span-2 space-y-6">
+      <div className="space-y-6">
           {!firePlan && !updating && (
             <motion.div variants={item}>
               <Card>
@@ -285,7 +320,7 @@ export function FIREPlannerPage() {
                   <EmptyState
                     icon={FileText}
                     title="No FIRE plan generated yet"
-                    description="This flow works without a statement upload. Fill the profile and generate a plan to see backend results."
+                    description="Add your profile details to see your target corpus, required SIP, and milestone roadmap."
                     action={handleRunPlan}
                     actionLabel="Generate Plan"
                   />
@@ -463,7 +498,6 @@ export function FIREPlannerPage() {
               </motion.div>
             </>
           )}
-        </div>
       </div>
     </motion.div>
   );

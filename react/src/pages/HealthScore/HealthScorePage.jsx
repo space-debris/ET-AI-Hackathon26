@@ -78,29 +78,46 @@ export function HealthScorePage() {
 
   if (!healthData) {
     return (
-      <div className="space-y-6">
+      <motion.div
+        variants={container}
+        initial="hidden"
+        animate="show"
+        className="space-y-6"
+      >
+        <motion.div variants={item} className="flex items-center gap-3">
+          <div className="p-3 bg-purple-100 rounded-xl">
+            <Activity className="h-6 w-6 text-purple-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Money Health Score</h1>
+            <p className="text-gray-500">A simple view of how strong your current financial setup looks</p>
+          </div>
+        </motion.div>
+
+        <motion.div variants={item}>
         <RuntimeNotice
           title={
             runtimeConfig.demoModeEnabled
               ? 'Demo mode is enabled for health scoring.'
-              : 'Health score data is unavailable.'
+              : 'Complete your portfolio analysis to generate a health score.'
           }
           description={
             runtimeConfig.demoModeEnabled
               ? 'Synthetic health-score output is shown only when demo mode is explicitly enabled.'
-              : error || 'Run a portfolio analysis first. The page stays empty instead of showing fallback scores.'
+              : error || 'Upload and analyse a statement first to generate your score, risk signals, and focus areas.'
           }
-          variant={runtimeConfig.demoModeEnabled ? 'demo' : error ? 'error' : 'live'}
+          variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
         />
+        </motion.div>
         <Card>
           <CardContent>
             <EmptyState
               title="No health score available"
-              description="This page does not render a fake score before real analysis data exists."
+              description="Upload a statement and complete portfolio analysis to see your money health score."
             />
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
     );
   }
 
@@ -122,7 +139,7 @@ export function HealthScorePage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Money Health Score</h1>
-            <p className="text-gray-500">Current analysis-backed health breakdown</p>
+            <p className="text-gray-500">A simple view of how strong your current financial setup looks</p>
           </div>
         </div>
         <Button
@@ -132,8 +149,8 @@ export function HealthScorePage() {
           onClick={handleDownloadReport}
           title={
             reportReady
-              ? 'Download the real report generated for this session.'
-              : 'Report download stays disabled until a real backend report object exists.'
+              ? 'Download your latest financial report.'
+              : 'Generate your analysis first to download a report.'
           }
         >
           {downloading ? 'Preparing Report...' : 'Download Report'}
@@ -145,12 +162,12 @@ export function HealthScorePage() {
           title={
             runtimeConfig.demoModeEnabled
               ? 'Demo mode is enabled for this page.'
-              : 'Scores and suggestions are data-backed when present.'
+              : 'Your score reflects your latest portfolio analysis.'
           }
           description={
             runtimeConfig.demoModeEnabled
               ? 'The score shown here is synthetic because demo mode was explicitly enabled.'
-              : 'If the backend response is missing, the page remains blank instead of showing placeholder commentary.'
+              : 'Use this page to understand your strengths, weak spots, and where you can improve next.'
           }
           variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
         />

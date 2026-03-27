@@ -11,7 +11,6 @@ import {
   ArrowRight,
   Wallet,
   Target,
-  Sparkles,
   ChevronRight,
   Zap,
 } from 'lucide-react';
@@ -51,7 +50,9 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [portfolio, setPortfolio] = useState(null);
   const [healthScore, setHealthScore] = useState(null);
-  const [error, setError] = useState(null);
+  const [noticeVariant, setNoticeVariant] = useState('live');
+  const [noticeDescription, setNoticeDescription] = useState('');
+  const [showNotice, setShowNotice] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -64,7 +65,19 @@ export function DashboardPage() {
         setPortfolio(portfolioResult.value);
       } else {
         console.error('Failed to fetch portfolio data:', portfolioResult.reason);
-        setError(portfolioResult.reason?.message || 'Portfolio analytics unavailable.');
+        const message = portfolioResult.reason?.message || 'Portfolio analytics unavailable.';
+        const isEmptySession =
+          portfolioResult.reason?.code === 404 ||
+          message.toLowerCase().includes('cached for this session');
+        if (isEmptySession) {
+          setShowNotice(false);
+          setNoticeVariant('live');
+          setNoticeDescription('');
+        } else {
+          setShowNotice(true);
+          setNoticeVariant('error');
+          setNoticeDescription(message);
+        }
       }
 
       if (healthResult.status === 'fulfilled') {
@@ -91,28 +104,28 @@ export function DashboardPage() {
   const quickActions = [
     {
       title: 'Upload Statement',
-      description: 'Import CAMS/KFintech PDF',
+      description: 'Start by importing your CAMS or KFintech PDF',
       icon: Upload,
       path: '/upload',
       gradient: 'from-blue-500 to-indigo-600',
     },
     {
       title: 'Portfolio X-Ray',
-      description: 'Deep analysis and insights',
+      description: 'Review allocation, overlap, XIRR, and expense drag',
       icon: PieChart,
       path: '/portfolio',
       gradient: 'from-purple-500 to-pink-600',
     },
     {
       title: 'FIRE Calculator',
-      description: 'Retirement roadmap',
+      description: 'Build a retirement roadmap from your profile',
       icon: Flame,
       path: '/fire-planner',
       gradient: 'from-orange-500 to-red-500',
     },
     {
       title: 'Tax Optimizer',
-      description: 'Regime comparison',
+      description: 'Compare old vs new regime and spot savings',
       icon: Calculator,
       path: '/tax-optimizer',
       gradient: 'from-emerald-500 to-teal-600',
@@ -120,6 +133,7 @@ export function DashboardPage() {
   ];
 
   const healthDimensions = healthScore?.dimensions ?? [];
+  const showRuntimeNotice = runtimeConfig.demoModeEnabled || showNotice;
 
   const smartInsights = portfolio
     ? [
@@ -158,15 +172,12 @@ export function DashboardPage() {
     >
       <motion.div variants={item} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-gray-500 text-sm">Good morning,</span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white text-xs font-medium rounded-full">
-              <Sparkles className="h-3 w-3" /> Premium
-            </span>
-          </div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
             Your Financial Dashboard
           </h1>
+          <p className="mt-2 max-w-2xl text-gray-500">
+            Start with your profile or upload a CAMS or KFintech statement to unlock portfolio insights, tax comparisons, health score, and your FIRE roadmap.
+          </p>
         </div>
         <Link to="/upload">
           <Button icon={Upload} iconPosition="left" size="lg">
@@ -175,55 +186,59 @@ export function DashboardPage() {
         </Link>
       </motion.div>
 
-      <motion.div variants={item}>
-        <RuntimeNotice
-          title={
-            runtimeConfig.demoModeEnabled
-              ? 'Demo mode is enabled for this dashboard.'
-              : 'Live mode stays blank until analysis data exists.'
-          }
-          description={
-            runtimeConfig.demoModeEnabled
-              ? 'Synthetic data appears only because demo mode was explicitly enabled.'
-              : error || 'This dashboard does not silently substitute sample results in live mode.'
-          }
-          variant={runtimeConfig.demoModeEnabled ? 'demo' : error ? 'error' : 'live'}
-        />
-      </motion.div>
+      {showRuntimeNotice && (
+        <motion.div variants={item}>
+          <RuntimeNotice
+            title={
+              runtimeConfig.demoModeEnabled
+                ? 'Demo mode is enabled for this dashboard.'
+                : 'We could not load your latest dashboard data.'
+            }
+            description={
+              runtimeConfig.demoModeEnabled
+                ? 'Synthetic data appears only because demo mode was explicitly enabled.'
+                : noticeDescription
+            }
+            variant={runtimeConfig.demoModeEnabled ? 'demo' : noticeVariant}
+          />
+        </motion.div>
+      )}
 
       <motion.div variants={item}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-bold text-gray-900 tracking-tight">Quick Actions</h2>
-          <span className="text-sm text-gray-400">What would you like to do?</span>
+          <span className="text-sm text-gray-400">Choose how you want to get started</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {quickActions.map((action, idx) => (
-            <Link key={idx} to={action.path}>
+            <Link key={idx} to={action.path} className="h-full">
               <motion.div
                 whileHover={{ y: -4, scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                className="group relative overflow-hidden bg-white rounded-2xl border border-gray-100 p-5 shadow-sm hover:shadow-xl transition-all duration-300"
+                className="group relative flex h-full min-h-[124px] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white px-4 py-4 shadow-sm transition-all duration-300 hover:shadow-xl"
               >
                 <div className={clsx(
                   'absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-5 transition-opacity duration-300',
                   action.gradient
                 )} />
 
-                <div className="relative">
+                <div className="relative flex h-full flex-col items-start">
                   <div className={clsx(
-                    'w-12 h-12 rounded-xl flex items-center justify-center mb-4',
+                    'mb-2 flex h-10 w-10 items-center justify-center rounded-xl',
                     'bg-gradient-to-br shadow-lg',
                     action.gradient
                   )}>
-                    <action.icon className="h-6 w-6 text-white" />
+                    <action.icon className="h-[18px] w-[18px] text-white" />
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
-                    {action.title}
-                  </h3>
-                  <p className="text-sm text-gray-500">{action.description}</p>
+                  <div className="pr-7">
+                    <h3 className="text-[1.02rem] font-semibold leading-tight text-gray-900 transition-colors group-hover:text-blue-600">
+                      {action.title}
+                    </h3>
+                    <p className="mt-1 text-sm leading-5 text-gray-500">{action.description}</p>
+                  </div>
 
-                  <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0 transition-all duration-300">
-                    <ChevronRight className="h-5 w-5 text-gray-400" />
+                  <div className="absolute right-0 top-0 opacity-0 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0 group-hover:opacity-100">
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
                   </div>
                 </div>
               </motion.div>
@@ -237,8 +252,8 @@ export function DashboardPage() {
           <Card>
             <CardContent>
               <EmptyState
-                title="No portfolio analysis loaded yet"
-                description="Upload and process a statement first. Profile-only scenarios remain available through the FIRE and Tax pages."
+                title="Your dashboard will fill in as you go"
+                description="Upload a statement for portfolio insights, or start right away with the FIRE Planner and Tax Optimizer using profile details only."
               />
             </CardContent>
           </Card>
@@ -369,7 +384,7 @@ export function DashboardPage() {
                   ) : (
                     <EmptyState
                       title="Health score unavailable"
-                      description="No health-score response is loaded for the current runtime state."
+                      description="Run a portfolio analysis to generate your health score and improvement areas."
                     />
                   )}
                 </CardContent>

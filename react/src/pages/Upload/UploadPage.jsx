@@ -101,36 +101,41 @@ export function UploadPage() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="w-full">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="space-y-6"
       >
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Upload Statement</h1>
-          <p className="text-gray-500 mt-1">
-            Upload your CAMS or KFintech consolidated statement to analyze your portfolio
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-blue-100 p-3">
+            <Upload className="h-6 w-6 text-blue-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Upload Statement</h1>
+            <p className="mt-1 text-gray-500">
+              Upload your CAMS or KFintech consolidated statement to analyse your portfolio
+            </p>
+          </div>
         </div>
 
         <RuntimeNotice
           title={
             runtimeConfig.demoModeEnabled
               ? 'Demo mode is enabled for statement upload.'
-              : 'Live mode does not silently substitute demo portfolios.'
+              : 'Upload your latest consolidated mutual fund statement.'
           }
           description={
             runtimeConfig.demoModeEnabled
               ? 'A successful upload in this mode loads explicit synthetic data only.'
-              : 'If parsing or backend processing fails, the page surfaces the failure instead of swapping in sample analysis.'
+              : 'Use a CAMS or KFintech PDF to generate portfolio analysis, recommendations, and your health score.'
           }
           variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
         />
 
         {/* Upload Card */}
-        <Card>
+        <Card className="w-full">
           <CardHeader>
             <CardTitle>Upload PDF Statement</CardTitle>
             <CardDescription>
@@ -266,7 +271,7 @@ export function UploadPage() {
         </Card>
 
         {/* Help Section */}
-        <Card>
+        <Card className="w-full">
           <CardHeader>
             <CardTitle>How to get your statement</CardTitle>
           </CardHeader>

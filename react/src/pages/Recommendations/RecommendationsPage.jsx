@@ -70,29 +70,50 @@ export function RecommendationsPage() {
 
   if (!recommendations || recommendations.length === 0) {
     return (
-      <div className="space-y-6">
+      <motion.div
+        variants={container}
+        initial="hidden"
+        animate="show"
+        className="space-y-6"
+      >
+        <motion.div variants={item}>
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-indigo-100 rounded-xl">
+              <FileText className="h-6 w-6 text-indigo-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Rebalancing Recommendations</h1>
+              <p className="text-gray-500">
+                View fund-level suggestions based on your portfolio analysis.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div variants={item}>
         <RuntimeNotice
           title={
             runtimeConfig.demoModeEnabled
               ? 'Demo mode is enabled for rebalancing.'
-              : 'Rebalancing needs a completed portfolio analysis.'
+              : 'Complete your portfolio analysis to unlock recommendations.'
           }
           description={
             runtimeConfig.demoModeEnabled
               ? 'Synthetic recommendations are shown only because demo mode is explicitly enabled.'
-              : error || 'No recommendation list is shown until a real statement has been processed.'
+              : error || 'Upload and analyse your statement first to see rebalancing suggestions, tax context, and next steps.'
           }
-          variant={runtimeConfig.demoModeEnabled ? 'demo' : error ? 'error' : 'live'}
+          variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
         />
+        </motion.div>
         <Card>
           <CardContent>
             <EmptyState
               title="No rebalancing recommendations available"
-              description="This page does not fabricate actions before analytics exist."
+              description="Upload a statement and run portfolio analysis to see fund-level recommendations."
             />
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
     );
   }
 
@@ -119,7 +140,7 @@ export function RecommendationsPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Rebalancing Recommendations</h1>
             <p className="text-gray-500">
-              Fund-level actions should come from backend advisory output, not frontend heuristics.
+              View fund-level suggestions based on your portfolio analysis.
             </p>
           </div>
         </div>
@@ -130,12 +151,12 @@ export function RecommendationsPage() {
           title={
             runtimeConfig.demoModeEnabled
               ? 'Demo mode is enabled for this page.'
-              : 'This page should remain empty if backend advisory output is unavailable.'
+              : 'These recommendations are based on your latest portfolio analysis.'
           }
           description={
             runtimeConfig.demoModeEnabled
               ? 'These recommendations are synthetic because demo mode was explicitly enabled.'
-              : 'No silent fallback to sample fund actions should occur in live mode.'
+              : 'Review suggested actions, tax impact, and rationale before deciding what to change.'
           }
           variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
         />
