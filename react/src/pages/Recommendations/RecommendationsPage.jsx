@@ -7,6 +7,8 @@ import {
   CheckCircle,
   Clock,
   TrendingDown,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -15,7 +17,7 @@ import { Spinner } from '../../components/ui/Spinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { portfolioApi, runtimeConfig, userApi } from '../../services/api';
-import { getActionColor } from '../../utils/helpers';
+import { formatCurrency, getActionColor } from '../../utils/helpers';
 import { clsx } from 'clsx';
 
 const container = {
@@ -43,6 +45,7 @@ export function RecommendationsPage() {
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState(null);
   const [error, setError] = useState(null);
+  const [expandedRecommendation, setExpandedRecommendation] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -134,6 +137,22 @@ export function RecommendationsPage() {
   const reduceCount = recommendations.filter((item) => item.action === 'reduce').length;
   const taxAwareCount = recommendations.filter((item) => item.taxImpact).length;
 
+  const getNextStep = (recommendation) => {
+    if (recommendation.action === 'switch' && recommendation.targetFund) {
+      return `Review the direct alternative ${recommendation.targetFund} before making the switch.`;
+    }
+    if (recommendation.action === 'reduce') {
+      return `Trim exposure gradually${recommendation.percentage ? ` by about ${recommendation.percentage}%` : ''} while keeping the rest invested.`;
+    }
+    if (recommendation.action === 'hold') {
+      return 'Continue monitoring this fund in the next review cycle without making an immediate change.';
+    }
+    if (recommendation.action === 'exit') {
+      return 'Review capital gains and liquidity first, then plan an orderly exit if it still fits your goal.';
+    }
+    return 'Review this suggestion alongside your goal horizon and tax position before acting.';
+  };
+
   return (
     <motion.div
       variants={container}
@@ -201,6 +220,7 @@ export function RecommendationsPage() {
       <motion.div variants={item} className="space-y-4">
         {recommendations.map((recommendation, idx) => {
           const ActionIcon = actionIcons[recommendation.action] || Clock;
+          const isExpanded = expandedRecommendation === idx;
           return (
             <Card key={idx} className="overflow-hidden">
               <div
@@ -272,11 +292,91 @@ export function RecommendationsPage() {
                   </div>
 
                   <div className="flex-shrink-0">
-                    <Button variant="ghost" size="sm" disabled>
-                      Details <ArrowRight className="h-4 w-4 ml-1" />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setExpandedRecommendation(isExpanded ? null : idx)}
+                      aria-expanded={isExpanded}
+                      aria-controls={`recommendation-details-${idx}`}
+                    >
+                      {isExpanded ? 'Hide details' : 'Details'}
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4 ml-1" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 ml-1" />
+                      )}
                     </Button>
                   </div>
                 </div>
+
+                {isExpanded && (
+                  <div
+                    id={`recommendation-details-${idx}`}
+                    className="mt-4 border-t border-gray-100 pt-4 grid gap-4 md:grid-cols-2"
+                  >
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Action Summary
+                      </p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700">
+                        <p>
+                          <span className="font-medium text-slate-900">Fund:</span>{' '}
+                          {recommendation.fundName}
+                        </p>
+                        <p>
+                          <span className="font-medium text-slate-900">Suggested action:</span>{' '}
+                          {recommendation.action.toUpperCase()}
+                          {recommendation.percentage ? ` ${recommendation.percentage}%` : ''}
+                        </p>
+                        {recommendation.targetFund && (
+                          <p>
+                            <span className="font-medium text-slate-900">Target fund:</span>{' '}
+                            {recommendation.targetFund}
+                          </p>
+                        )}
+                        {recommendation.amountInr ? (
+                          <p>
+                            <span className="font-medium text-slate-900">Indicative amount:</span>{' '}
+                            {formatCurrency(recommendation.amountInr)}
+                          </p>
+                        ) : null}
+                        {recommendation.priority ? (
+                          <p>
+                            <span className="font-medium text-slate-900">Priority:</span> P
+                            {recommendation.priority}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl bg-blue-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+                        Why It Matters
+                      </p>
+                      <p className="mt-3 text-sm leading-6 text-slate-700">
+                        {recommendation.rationale || 'No additional rationale was provided.'}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-emerald-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">
+                        Tax Consideration
+                      </p>
+                      <p className="mt-3 text-sm leading-6 text-slate-700">
+                        {recommendation.taxImpact || 'No tax note was provided for this recommendation.'}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-amber-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
+                        Suggested Next Step
+                      </p>
+                      <p className="mt-3 text-sm leading-6 text-slate-700">
+                        {getNextStep(recommendation)}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
