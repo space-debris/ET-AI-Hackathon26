@@ -61,12 +61,15 @@ class AdvisoryAgent:
 
     def __init__(self, model_name: str = None):
         self.model_name = model_name or config.GEMINI_MODEL
-        self.llm = ChatGoogleGenerativeAI(
-            model=self.model_name,
-            google_api_key=config.GEMINI_API_KEY,
-            temperature=config.GEMINI_TEMPERATURE,
-            max_output_tokens=config.GEMINI_MAX_OUTPUT_TOKENS,
-        )
+        self.llm_available = bool(config.GEMINI_API_KEY)
+        self.llm = None
+        if self.llm_available:
+            self.llm = ChatGoogleGenerativeAI(
+                model=self.model_name,
+                google_api_key=config.GEMINI_API_KEY,
+                temperature=config.GEMINI_TEMPERATURE,
+                max_output_tokens=config.GEMINI_MAX_OUTPUT_TOKENS,
+            )
         # Load prompt templates
         self.system_prompt = self._load_prompt("advisory_system.txt")
         self.fire_prompt_template = self._load_prompt("fire_planner.txt")
@@ -99,6 +102,9 @@ class AdvisoryAgent:
         Returns:
             Raw LLM response text
         """
+        if not self.llm_available or self.llm is None:
+            raise RuntimeError("GEMINI_API_KEY is not configured for live advisory generation.")
+
         sys_prompt = system_prompt or self.system_prompt
         messages = [
             SystemMessage(content=sys_prompt),
@@ -693,70 +699,36 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
         profile: UserFinancialProfile,
         missed_deductions: List[str],
     ) -> List[TaxInstrumentSuggestion]:
-        """Use LLM to suggest 2-3 tax-saving instruments."""
-        prompt = f"""Based on this investor profile, suggest exactly 3 tax-saving instruments
-ranked by suitability.
-
-Profile: Age {profile.age}, Income ₹{profile.annual_income:,.0f}, 
-Risk profile: {profile.risk_profile.value}
-Current gaps: {json.dumps(missed_deductions)}
-
-Return a JSON array of exactly 3 objects, each with:
-- name, section, max_limit (number), expected_return (string like "7-9%"),
-  liquidity (low/medium/high), risk (low/medium/high), rationale
-
-Return ONLY the JSON array: [{{"name": "...", ...}}, ...]"""
-
-        try:
-            response = self._call_llm(prompt)
-            parsed = self._parse_json_response(response)
-            if not isinstance(parsed, list):
-                parsed = [parsed]
-
-            instruments = []
-            for item in parsed[:3]:
-                instruments.append(TaxInstrumentSuggestion(
-                    name=item.get("name", ""),
-                    section=item.get("section", ""),
-                    max_limit=float(item.get("max_limit", 0)),
-                    expected_return=item.get("expected_return", ""),
-                    liquidity=item.get("liquidity", "medium"),
-                    risk=item.get("risk", "medium"),
-                    rationale=item.get("rationale", ""),
-                ))
-            return instruments
-        except Exception as e:
-            logger.warning(f"Failed to generate instrument suggestions: {e}")
-            # Fallback: return hardcoded sensible defaults
-            return [
-                TaxInstrumentSuggestion(
-                    name="ELSS Mutual Fund",
-                    section="80C",
-                    max_limit=150000,
-                    expected_return="10-14%",
-                    liquidity="medium",
-                    risk="medium",
-                    rationale="Shortest lock-in (3 years) among 80C instruments with equity market returns",
-                ),
-                TaxInstrumentSuggestion(
-                    name="NPS Tier-1",
-                    section="80CCD(1B)",
-                    max_limit=50000,
-                    expected_return="8-10%",
-                    liquidity="low",
-                    risk="medium",
-                    rationale="Additional ₹50K deduction beyond 80C limit, market-linked returns",
-                ),
-                TaxInstrumentSuggestion(
-                    name="PPF (Public Provident Fund)",
-                    section="80C",
-                    max_limit=150000,
-                    expected_return="7.1%",
-                    liquidity="low",
-                    risk="low",
-                    rationale="Sovereign guarantee, tax-free returns, part of 80C limit",
-                ),
-            ]
+        """Return deterministic tax-saving suggestions without blocking on LLM runtime."""
+        return [
+            TaxInstrumentSuggestion(
+                name="ELSS Mutual Fund",
+                section="80C",
+                max_limit=150000,
+                expected_return="10-14%",
+                liquidity="medium",
+                risk="medium",
+                rationale="Shortest lock-in (3 years) among 80C instruments with equity market returns",
+            ),
+            TaxInstrumentSuggestion(
+                name="NPS Tier-1",
+                section="80CCD(1B)",
+                max_limit=50000,
+                expected_return="8-10%",
+                liquidity="low",
+                risk="medium",
+                rationale="Additional ₹50K deduction beyond 80C limit, market-linked returns",
+            ),
+            TaxInstrumentSuggestion(
+                name="PPF (Public Provident Fund)",
+                section="80C",
+                max_limit=150000,
+                expected_return="7.1%",
+                liquidity="low",
+                risk="low",
+                rationale="Sovereign guarantee, tax-free returns, part of 80C limit",
+            ),
+        ]
 
     # =========================================================================
     # 4. HEALTH SCORE

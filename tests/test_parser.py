@@ -67,3 +67,23 @@ class TestParserAgent:
         assert transactions[0].date == date(2023, 4, 7)
         assert transactions[2].fund_name == "HDFC Short Term Debt Fund - Regular Plan - Growth"
         assert transactions[2].transaction_type == TransactionType.PURCHASE
+
+    def test_extract_transactions_parses_synthetic_summary_layout(self):
+        agent = ParserAgent()
+        raw_text = (
+            "HDFC Top 100 Fund - Regular Plan - Growth\n"
+            "AMC: HDFC Mutual Fund Folio: 1234567/89 ISIN: INF179K01VV5 Plan: Regular\n"
+            "Date Type Amount (Rs.) NAV Units\n"
+            "10-Apr-2020 Purchase (SIP) 5,000.00 412.3500 12.127\n"
+            "10-Jun-2021 Purchase (SIP) 5,000.00 548.7600 9.112\n"
+        )
+
+        transactions = agent.extract_transactions(raw_text)
+
+        assert len(transactions) == 2
+        assert transactions[0].fund_name == "HDFC Top 100 Fund - Regular Plan - Growth"
+        assert transactions[0].amc == "HDFC Mutual Fund"
+        assert transactions[0].folio_number == "1234567/89"
+        assert transactions[0].isin == "INF179K01VV5"
+        assert transactions[0].transaction_type == TransactionType.SIP
+        assert transactions[0].date == date(2020, 4, 10)

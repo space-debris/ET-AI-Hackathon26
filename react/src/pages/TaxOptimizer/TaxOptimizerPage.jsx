@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Calculator,
@@ -13,7 +13,7 @@ import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
-import { taxApi, runtimeConfig } from '../../services/api';
+import { taxApi, runtimeConfig, userApi } from '../../services/api';
 import { formatCurrency } from '../../utils/helpers';
 import { clsx } from 'clsx';
 
@@ -34,6 +34,9 @@ export function TaxOptimizerPage() {
   const [calculating, setCalculating] = useState(false);
   const [taxData, setTaxData] = useState(null);
   const [error, setError] = useState(null);
+  const autoRefreshEnabled = useRef(false);
+  const hydratingProfile = useRef(true);
+  const lastSyncedProfile = useRef('');
   const [profile, setProfile] = useState({
     annualIncome: 2400000,
     baseSalary: 1800000,
@@ -49,6 +52,33 @@ export function TaxOptimizerPage() {
     setProfile((prev) => ({ ...prev, [field]: parseInt(value, 10) || 0 }));
   };
 
+  useEffect(() => {
+    let active = true;
+
+    async function hydrateProfile() {
+      try {
+        const savedProfile = await userApi.getProfile();
+        if (!active || !savedProfile) {
+          return;
+        }
+        setProfile((prev) => ({
+          ...prev,
+          ...savedProfile,
+        }));
+      } catch {
+        // Keep the validation defaults when no saved session profile exists.
+      } finally {
+        hydratingProfile.current = false;
+      }
+    }
+
+    hydrateProfile();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleCalculate = async () => {
     setCalculating(true);
     setError(null);
@@ -56,6 +86,8 @@ export function TaxOptimizerPage() {
     try {
       const data = await taxApi.compareRegimes(profile);
       setTaxData(data);
+      autoRefreshEnabled.current = true;
+      lastSyncedProfile.current = JSON.stringify(profile);
     } catch (calculateError) {
       console.error('Failed to calculate tax comparison:', calculateError);
       setTaxData(null);
@@ -64,6 +96,37 @@ export function TaxOptimizerPage() {
       setCalculating(false);
     }
   };
+
+  useEffect(() => {
+    const profileSignature = JSON.stringify(profile);
+
+    if (
+      !autoRefreshEnabled.current ||
+      hydratingProfile.current ||
+      calculating ||
+      lastSyncedProfile.current === profileSignature
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        setCalculating(true);
+        setError(null);
+        const data = await taxApi.compareRegimes(profile);
+        setTaxData(data);
+        lastSyncedProfile.current = profileSignature;
+      } catch (calculateError) {
+        console.error('Failed to refresh tax comparison:', calculateError);
+        setTaxData(null);
+        setError(calculateError.message);
+      } finally {
+        setCalculating(false);
+      }
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [profile, calculating]);
 
   const isOldBetter = taxData?.recommendedRegime === 'old';
 
@@ -117,7 +180,7 @@ export function TaxOptimizerPage() {
             <CardHeader>
               <CardTitle>Your Income Details</CardTitle>
               <CardDescription>
-                `rent_paid` is included here and sent to the backend contract.
+                `rent_paid` is included here and sent to the backend contract. After the first run, changes recompute automatically.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

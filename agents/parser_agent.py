@@ -54,6 +54,19 @@ class ParserAgent:
             r"^AMC\s+(?P<amc>.+?)\s+Folio\s+No\.?\s+(?P<folio>[A-Za-z0-9\-/]+)$",
             flags=re.IGNORECASE,
         )
+        self._inline_meta_pattern = re.compile(
+            r"^AMC:\s*(?P<amc>.+?)\s+Folio:\s*(?P<folio>[A-Za-z0-9\-/]+)\s+"
+            r"ISIN:\s*(?P<isin>[A-Z0-9]+)\s+Plan:\s*(?P<plan>.+)$",
+            flags=re.IGNORECASE,
+        )
+        self._summary_row_pattern = re.compile(
+            r"^(?P<date>\d{1,2}-[A-Za-z]{3}-\d{4})\s+"
+            r"(?P<txn_type>.+?)\s+"
+            r"(?P<amount>-?[\d,]+(?:\.\d+)?)\s+"
+            r"(?P<nav>[\d,]+(?:\.\d+)?)\s+"
+            r"(?P<units>-?[\d,]+(?:\.\d+)?)$",
+            flags=re.IGNORECASE,
+        )
 
     @staticmethod
     def _parse_date(value: str):
@@ -86,6 +99,8 @@ class ParserAgent:
             return TransactionType.SWITCH_IN
         if "switch" in normalized and "out" in normalized:
             return TransactionType.SWITCH_OUT
+        if "purchase" in normalized and "sip" in normalized:
+            return TransactionType.SIP
         if "sip" in normalized:
             return TransactionType.SIP
         if "purchase" in normalized:
@@ -105,12 +120,13 @@ class ParserAgent:
 
     @staticmethod
     def _is_scheme_header(line: str) -> bool:
-        if not line or line.startswith(("AMC ", "Registrar ", "Date ", "Net Invested:", "Synthetic CAMS")):
+        if not line or line.startswith(("AMC ", "AMC:", "Registrar ", "Date ", "Net Invested:", "Synthetic CAMS")):
             return False
         if line.startswith(
             (
                 "Computer Age",
                 "Consolidated Account",
+                "Portfolio Summary",
                 "Statement Period:",
                 "Investor Name",
                 "Email ",
@@ -118,8 +134,15 @@ class ParserAgent:
                 "Profile ",
                 "Investor ",
                 "Funds Covered",
+                "Funds ",
+                "AMCs ",
+                "Total ",
+                "Approx ",
+                "Stock ",
                 "Current Value",
                 "Unrealised Gain",
+                "Units:",
+                "DISCLAIMER:",
             )
         ):
             return False
@@ -193,9 +216,33 @@ class ParserAgent:
                 current_folio = meta_match.group("folio").strip()
                 continue
 
+            inline_meta_match = self._inline_meta_pattern.match(line)
+            if inline_meta_match:
+                current_amc = inline_meta_match.group("amc").strip()
+                current_folio = inline_meta_match.group("folio").strip()
+                current_isin = inline_meta_match.group("isin").strip()
+                continue
+
             isin_match = self._isin_pattern.search(line)
             if isin_match:
                 current_isin = isin_match.group(1)
+
+            summary_match = self._summary_row_pattern.match(line)
+            if summary_match and current_fund:
+                transactions.append(
+                    Transaction(
+                        fund_name=current_fund,
+                        isin=current_isin,
+                        amc=current_amc or self._infer_amc(current_fund),
+                        date=self._parse_date(summary_match.group("date")),
+                        amount=self._parse_amount(summary_match.group("amount")),
+                        units=self._parse_amount(summary_match.group("units")),
+                        nav=self._parse_amount(summary_match.group("nav")),
+                        transaction_type=self._normalize_txn_type(summary_match.group("txn_type")),
+                        folio_number=current_folio,
+                    )
+                )
+                continue
 
             table_match = self._table_row_pattern.match(line)
             if table_match and current_fund:

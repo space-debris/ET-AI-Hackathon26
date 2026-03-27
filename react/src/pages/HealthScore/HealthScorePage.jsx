@@ -8,7 +8,7 @@ import { Spinner } from '../../components/ui/Spinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { HealthScoreRadar, HealthScoreDetails } from '../../components/charts/HealthScoreChart';
-import { healthApi, runtimeConfig } from '../../services/api';
+import { healthApi, reportApi, runtimeConfig } from '../../services/api';
 import { getScoreColor, getScoreLabel } from '../../utils/helpers';
 
 const container = {
@@ -28,12 +28,18 @@ export function HealthScorePage() {
   const [loading, setLoading] = useState(true);
   const [healthData, setHealthData] = useState(null);
   const [error, setError] = useState(null);
+  const [reportReady, setReportReady] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const data = await healthApi.getScore();
+        const [data, report] = await Promise.all([
+          healthApi.getScore(),
+          reportApi.getReport(),
+        ]);
         setHealthData(data);
+        setReportReady(Boolean(report));
       } catch (fetchError) {
         console.error('Failed to fetch health score:', fetchError);
         setError(fetchError.message);
@@ -44,6 +50,23 @@ export function HealthScorePage() {
 
     fetchData();
   }, []);
+
+  const handleDownloadReport = async () => {
+    try {
+      setDownloading(true);
+      const blob = await reportApi.downloadReport();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = 'finsage-report.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -105,10 +128,15 @@ export function HealthScorePage() {
         <Button
           variant="secondary"
           icon={Download}
-          disabled
-          title="Report download stays disabled until a real backend report object exists."
+          disabled={!reportReady || downloading}
+          onClick={handleDownloadReport}
+          title={
+            reportReady
+              ? 'Download the real report generated for this session.'
+              : 'Report download stays disabled until a real backend report object exists.'
+          }
         >
-          Download Report
+          {downloading ? 'Preparing Report...' : 'Download Report'}
         </Button>
       </motion.div>
 

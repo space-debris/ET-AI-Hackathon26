@@ -6,8 +6,10 @@ Owner: Abhishek
 """
 
 from datetime import date
+from pathlib import Path
 
 from agents.analytics_agent import AnalyticsAgent
+from agents.parser_agent import ParserAgent
 from shared.schemas import (
     FundCategory,
     FundHolding,
@@ -94,3 +96,19 @@ class TestAnalyticsAgent:
         assert result["current_agent"] == "analytics"
         assert result["analytics"]["total_invested"] > 0
         assert len(result["analytics"]["holdings"]) == 1
+
+    def test_sample_fixture_enrichment_matches_scenario_c_expectations(self):
+        parser = ParserAgent()
+        pdf_path = Path("data/sample_cams_detailed.pdf")
+        raw_text = parser.parse_pdf(str(pdf_path))
+        transactions = parser.extract_transactions(raw_text)
+
+        analytics = AnalyticsAgent().calculate_portfolio(transactions, raw_text=raw_text)
+
+        assert len(transactions) == 30
+        assert len(analytics.holdings) == 6
+        assert analytics.overall_xirr == 0.121
+        assert analytics.expense_ratio_drag_inr == 5644.85
+        assert "Reliance Industries" in analytics.overlap_matrix
+        assert "HDFC Bank" in analytics.overlap_matrix
+        assert "Infosys" in analytics.overlap_matrix

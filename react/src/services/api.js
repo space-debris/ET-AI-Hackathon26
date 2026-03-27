@@ -11,6 +11,21 @@ import {
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const DEMO_MODE_ENABLED =
   String(import.meta.env.VITE_ENABLE_DEMO_MODE || '').toLowerCase() === 'true';
+const SESSION_STORAGE_KEY = 'finsage-session-id';
+
+const getStoredSessionId = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return window.localStorage.getItem(SESSION_STORAGE_KEY);
+};
+
+const setStoredSessionId = (sessionId) => {
+  if (!sessionId || typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+};
 
 // Create axios instance with default config
 const api = axios.create({
@@ -19,6 +34,19 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+api.interceptors.request.use((config) => {
+  const sessionId = getStoredSessionId();
+  if (sessionId) {
+    config.headers['X-Session-Id'] = sessionId;
+  }
+  return config;
+});
+
+api.interceptors.response.use((response) => {
+  setStoredSessionId(response.headers['x-session-id']);
+  return response;
 });
 
 // Simulate API delay for realistic UX
@@ -48,7 +76,8 @@ const normalizeHolding = (holding) => ({
 });
 
 const normalizePortfolioAnalytics = (payload) => {
-  const portfolio = payload?.data ?? payload?.portfolio ?? payload ?? null;
+  const portfolio =
+    payload?.analytics ?? payload?.data ?? payload?.portfolio ?? payload ?? null;
   if (!portfolio) {
     return null;
   }
@@ -140,7 +169,13 @@ const normalizeInsuranceGap = (insuranceGap) => {
 };
 
 const normalizeFirePlan = (payload) => {
-  const fire = payload?.fire ?? payload?.data ?? payload ?? null;
+  const fire =
+    payload?.fire ??
+    payload?.firePlan ??
+    payload?.fire_plan ??
+    payload?.data ??
+    payload ??
+    null;
   if (!fire) {
     return null;
   }
@@ -284,6 +319,29 @@ const toExistingInvestmentsMap = (existingInvestments) => {
   return {};
 };
 
+const toFrontendProfile = (profile = {}) => ({
+  age: profile.age ?? 0,
+  annualIncome: profile.annualIncome ?? profile.annual_income ?? 0,
+  monthlyExpenses: profile.monthlyExpenses ?? profile.monthly_expenses ?? 0,
+  existingInvestments:
+    profile.existingInvestments ?? profile.existing_investments ?? {},
+  targetRetirementAge:
+    profile.targetRetirementAge ?? profile.target_retirement_age ?? 0,
+  targetMonthlyCorpus:
+    profile.targetMonthlyCorpus ?? profile.target_monthly_corpus ?? 0,
+  riskProfile: profile.riskProfile ?? profile.risk_profile ?? 'moderate',
+  baseSalary: profile.baseSalary ?? profile.base_salary ?? 0,
+  hraReceived: profile.hraReceived ?? profile.hra_received ?? profile.hra ?? 0,
+  rentPaid: profile.rentPaid ?? profile.rent_paid ?? 0,
+  metroCity: profile.metroCity ?? profile.metro_city ?? true,
+  section80C: profile.section80C ?? profile.section_80c ?? 0,
+  npsContribution: profile.npsContribution ?? profile.nps_contribution ?? 0,
+  homeLoanInterest: profile.homeLoanInterest ?? profile.home_loan_interest ?? 0,
+  medicalInsurancePremium:
+    profile.medicalInsurancePremium ?? profile.medical_insurance_premium ?? 0,
+  otherDeductions: profile.otherDeductions ?? profile.other_deductions ?? 0,
+});
+
 const toBackendProfile = (profile = {}) => ({
   age: profile.age,
   annual_income: profile.annualIncome ?? profile.annual_income ?? 0,
@@ -311,12 +369,6 @@ const toBackendProfile = (profile = {}) => ({
     null,
   other_deductions: profile.otherDeductions ?? profile.other_deductions ?? null,
 });
-
-const createModeError = (message) => {
-  const error = new Error(message);
-  error.code = 'NO_RUNTIME_DATA';
-  return error;
-};
 
 const withApiErrorContext = (message, error) => {
   const details =
@@ -508,7 +560,7 @@ export const userApi = {
 
     try {
       const response = await api.get('/user/profile');
-      return response.data;
+      return toFrontendProfile(response.data?.profile ?? response.data);
     } catch (error) {
       throw withApiErrorContext('User profile unavailable.', error);
     }
@@ -526,6 +578,31 @@ export const userApi = {
     } catch (error) {
       throw withApiErrorContext('User profile update failed.', error);
     }
+  },
+};
+
+export const reportApi = {
+  async getReport() {
+    if (DEMO_MODE_ENABLED) {
+      return null;
+    }
+
+    try {
+      const response = await api.get('/report');
+      return response.data?.report ?? response.data ?? null;
+    } catch (error) {
+      if (error?.response?.status === 404) {
+        return null;
+      }
+      throw withApiErrorContext('Report metadata unavailable.', error);
+    }
+  },
+
+  async downloadReport() {
+    const response = await api.get('/report/download', {
+      responseType: 'blob',
+    });
+    return response.data;
   },
 };
 

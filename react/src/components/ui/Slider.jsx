@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { clsx } from 'clsx';
 
 export function Slider({

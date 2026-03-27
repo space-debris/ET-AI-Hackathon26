@@ -71,7 +71,7 @@ export function AllocationPieChart({ holdings, title = 'Portfolio Allocation' })
               <Legend
                 verticalAlign="bottom"
                 height={36}
-                formatter={(value, entry) => (
+                formatter={(value) => (
                   <span className="text-sm text-gray-600">{value}</span>
                 )}
               />

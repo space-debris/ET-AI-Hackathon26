@@ -15,7 +15,7 @@ import {
 } from '../../components/charts/AllocationChart';
 import { XIRRBarChart, ReturnsComparisonChart } from '../../components/charts/XIRRChart';
 import { OverlapHeatmap } from '../../components/charts/OverlapHeatmap';
-import { portfolioApi, runtimeConfig } from '../../services/api';
+import { portfolioApi, reportApi, runtimeConfig } from '../../services/api';
 import {
   formatCurrency,
   formatPercentage,
@@ -41,12 +41,18 @@ export function PortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [portfolio, setPortfolio] = useState(null);
   const [error, setError] = useState(null);
+  const [reportReady, setReportReady] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const data = await portfolioApi.getAnalytics();
+        const [data, report] = await Promise.all([
+          portfolioApi.getAnalytics(),
+          reportApi.getReport(),
+        ]);
         setPortfolio(data);
+        setReportReady(Boolean(report));
       } catch (error) {
         console.error('Failed to fetch portfolio:', error);
         setError(error.message);
@@ -56,6 +62,23 @@ export function PortfolioPage() {
     }
     fetchData();
   }, []);
+
+  const handleDownloadReport = async () => {
+    try {
+      setDownloading(true);
+      const blob = await reportApi.downloadReport();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = 'finsage-report.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -115,10 +138,15 @@ export function PortfolioPage() {
           <Button
             variant="secondary"
             icon={Download}
-            disabled
-            title="Report download stays disabled until a real backend report object exists."
+            disabled={!reportReady || downloading}
+            onClick={handleDownloadReport}
+            title={
+              reportReady
+                ? 'Download the real report generated for this session.'
+                : 'Report download stays disabled until a real backend report object exists.'
+            }
           >
-            Export PDF
+            {downloading ? 'Preparing Report...' : 'Export PDF'}
           </Button>
         </div>
         <RuntimeNotice

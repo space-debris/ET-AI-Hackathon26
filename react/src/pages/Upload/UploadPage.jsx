@@ -86,7 +86,7 @@ export function UploadPage() {
       setTimeout(() => {
         navigate('/portfolio');
       }, 1500);
-    } catch (err) {
+    } catch {
       clearInterval(progressInterval);
       setUploadState('error');
       setError('Failed to process the statement. Please try again.');

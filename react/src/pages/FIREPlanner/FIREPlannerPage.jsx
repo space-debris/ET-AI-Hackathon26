@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Flame,
@@ -18,7 +18,7 @@ import { StatCard } from '../../components/ui/StatCard';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { FIRETimelineChart, SIPProgressChart } from '../../components/charts/FIREChart';
-import { fireApi, runtimeConfig } from '../../services/api';
+import { fireApi, runtimeConfig, userApi } from '../../services/api';
 import { formatCurrency, formatCompactNumber } from '../../utils/helpers';
 
 const container = {
@@ -44,6 +44,9 @@ export function FIREPlannerPage() {
   const [updating, setUpdating] = useState(false);
   const [firePlan, setFirePlan] = useState(null);
   const [error, setError] = useState(null);
+  const autoRefreshEnabled = useRef(false);
+  const hydratingProfile = useRef(true);
+  const lastSyncedProfile = useRef('');
   const [profile, setProfile] = useState({
     age: 32,
     annualIncome: 1800000,
@@ -58,6 +61,33 @@ export function FIREPlannerPage() {
     setProfile((prev) => ({ ...prev, [field]: value }));
   };
 
+  useEffect(() => {
+    let active = true;
+
+    async function hydrateProfile() {
+      try {
+        const savedProfile = await userApi.getProfile();
+        if (!active || !savedProfile) {
+          return;
+        }
+        setProfile((prev) => ({
+          ...prev,
+          ...savedProfile,
+        }));
+      } catch {
+        // Keep the default validation profile if no session profile exists yet.
+      } finally {
+        hydratingProfile.current = false;
+      }
+    }
+
+    hydrateProfile();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleRunPlan = async () => {
     setUpdating(true);
     setError(null);
@@ -67,6 +97,8 @@ export function FIREPlannerPage() {
         ? await fireApi.updatePlan(profile)
         : await fireApi.generatePlan(profile);
       setFirePlan(data);
+      autoRefreshEnabled.current = true;
+      lastSyncedProfile.current = JSON.stringify(profile);
     } catch (runError) {
       console.error('Failed to run FIRE plan:', runError);
       setFirePlan(null);
@@ -75,6 +107,37 @@ export function FIREPlannerPage() {
       setUpdating(false);
     }
   };
+
+  useEffect(() => {
+    const profileSignature = JSON.stringify(profile);
+
+    if (
+      !autoRefreshEnabled.current ||
+      hydratingProfile.current ||
+      updating ||
+      lastSyncedProfile.current === profileSignature
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        setUpdating(true);
+        setError(null);
+        const data = await fireApi.updatePlan(profile);
+        setFirePlan(data);
+        lastSyncedProfile.current = profileSignature;
+      } catch (runError) {
+        console.error('Failed to refresh FIRE plan:', runError);
+        setFirePlan(null);
+        setError(runError.message);
+      } finally {
+        setUpdating(false);
+      }
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [profile, updating]);
 
   const yearsToFire = profile.targetRetirementAge - profile.age;
   const insuranceGapValue = firePlan?.insuranceGap?.totalGap ?? 0;
@@ -132,7 +195,7 @@ export function FIREPlannerPage() {
             <CardHeader>
               <CardTitle>Your Profile</CardTitle>
               <CardDescription>
-                Update the profile and rerun to recompute the FIRE plan.
+                After the first successful run, profile changes refresh the FIRE plan automatically.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
