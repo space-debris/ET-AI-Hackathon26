@@ -6,6 +6,8 @@ import { Button } from '../../components/ui/Button';
 import { StatCard } from '../../components/ui/StatCard';
 import { Badge } from '../../components/ui/Badge';
 import { Spinner } from '../../components/ui/Spinner';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/Tabs';
 import {
   AllocationPieChart,
@@ -13,7 +15,7 @@ import {
 } from '../../components/charts/AllocationChart';
 import { XIRRBarChart, ReturnsComparisonChart } from '../../components/charts/XIRRChart';
 import { OverlapHeatmap } from '../../components/charts/OverlapHeatmap';
-import { portfolioApi } from '../../services/api';
+import { portfolioApi, runtimeConfig } from '../../services/api';
 import {
   formatCurrency,
   formatPercentage,
@@ -38,6 +40,7 @@ const item = {
 export function PortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [portfolio, setPortfolio] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -46,6 +49,7 @@ export function PortfolioPage() {
         setPortfolio(data);
       } catch (error) {
         console.error('Failed to fetch portfolio:', error);
+        setError(error.message);
       } finally {
         setLoading(false);
       }
@@ -61,6 +65,34 @@ export function PortfolioPage() {
     );
   }
 
+  if (!portfolio) {
+    return (
+      <div className="space-y-6">
+        <RuntimeNotice
+          title={
+            runtimeConfig.demoModeEnabled
+              ? 'Demo mode is enabled for portfolio analytics.'
+              : 'Portfolio analytics need a processed statement.'
+          }
+          description={
+            runtimeConfig.demoModeEnabled
+              ? 'Synthetic portfolio data is shown only because demo mode is explicitly enabled.'
+              : error || 'Upload and process a CAMS or KFintech PDF before this page can render live analytics.'
+          }
+          variant={runtimeConfig.demoModeEnabled ? 'demo' : error ? 'error' : 'live'}
+        />
+        <Card>
+          <CardContent>
+            <EmptyState
+              title="No portfolio analysis available"
+              description="This page does not invent holdings or returns before a statement is parsed."
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const absoluteReturns = portfolio.totalCurrentValue - portfolio.totalInvested;
   const returnsPct = calculateReturns(portfolio.totalInvested, portfolio.totalCurrentValue);
 
@@ -72,16 +104,36 @@ export function PortfolioPage() {
       className="space-y-6"
     >
       {/* Header */}
-      <motion.div variants={item} className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Portfolio Analysis</h1>
-          <p className="text-gray-500 mt-1">
-            Detailed breakdown of your mutual fund portfolio
-          </p>
+      <motion.div variants={item} className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Portfolio Analysis</h1>
+            <p className="text-gray-500 mt-1">
+              Detailed breakdown of your mutual fund portfolio
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            icon={Download}
+            disabled
+            title="Report download stays disabled until a real backend report object exists."
+          >
+            Export PDF
+          </Button>
         </div>
-        <Button variant="secondary" icon={Download}>
-          Export PDF
-        </Button>
+        <RuntimeNotice
+          title={
+            runtimeConfig.demoModeEnabled
+              ? 'Demo mode is enabled for this page.'
+              : 'This page reflects portfolio analytics only after statement processing succeeds.'
+          }
+          description={
+            runtimeConfig.demoModeEnabled
+              ? 'The numbers on this page are synthetic because demo mode was explicitly enabled.'
+              : 'If parsing or analytics fail, the page remains empty instead of silently swapping to sample holdings.'
+          }
+          variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
+        />
       </motion.div>
 
       {/* Key Stats */}

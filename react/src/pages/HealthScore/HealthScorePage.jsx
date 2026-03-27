@@ -5,8 +5,10 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../..
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Spinner } from '../../components/ui/Spinner';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { HealthScoreRadar, HealthScoreDetails } from '../../components/charts/HealthScoreChart';
-import { healthApi } from '../../services/api';
+import { healthApi, runtimeConfig } from '../../services/api';
 import { getScoreColor, getScoreLabel } from '../../utils/helpers';
 
 const container = {
@@ -25,18 +27,21 @@ const item = {
 export function HealthScorePage() {
   const [loading, setLoading] = useState(true);
   const [healthData, setHealthData] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
         const data = await healthApi.getScore();
         setHealthData(data);
-      } catch (error) {
-        console.error('Failed to fetch health score:', error);
+      } catch (fetchError) {
+        console.error('Failed to fetch health score:', fetchError);
+        setError(fetchError.message);
       } finally {
         setLoading(false);
       }
     }
+
     fetchData();
   }, []);
 
@@ -48,9 +53,36 @@ export function HealthScorePage() {
     );
   }
 
-  // Calculate improvement potential
+  if (!healthData) {
+    return (
+      <div className="space-y-6">
+        <RuntimeNotice
+          title={
+            runtimeConfig.demoModeEnabled
+              ? 'Demo mode is enabled for health scoring.'
+              : 'Health score data is unavailable.'
+          }
+          description={
+            runtimeConfig.demoModeEnabled
+              ? 'Synthetic health-score output is shown only when demo mode is explicitly enabled.'
+              : error || 'Run a portfolio analysis first. The page stays empty instead of showing fallback scores.'
+          }
+          variant={runtimeConfig.demoModeEnabled ? 'demo' : error ? 'error' : 'live'}
+        />
+        <Card>
+          <CardContent>
+            <EmptyState
+              title="No health score available"
+              description="This page does not render a fake score before real analysis data exists."
+            />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const maxPossible = healthData.dimensions.length * 100;
-  const currentTotal = healthData.dimensions.reduce((sum, d) => sum + d.score, 0);
+  const currentTotal = healthData.dimensions.reduce((sum, dimension) => sum + dimension.score, 0);
   const improvementPotential = maxPossible - currentTotal;
 
   return (
@@ -60,27 +92,44 @@ export function HealthScorePage() {
       animate="show"
       className="space-y-6"
     >
-      {/* Header */}
-      <motion.div variants={item} className="flex items-center justify-between">
+      <motion.div variants={item} className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-purple-100 rounded-xl">
             <Activity className="h-6 w-6 text-purple-600" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Money Health Score</h1>
-            <p className="text-gray-500">
-              Comprehensive analysis of your portfolio health
-            </p>
+            <p className="text-gray-500">Current analysis-backed health breakdown</p>
           </div>
         </div>
-        <Button variant="secondary" icon={Download}>
+        <Button
+          variant="secondary"
+          icon={Download}
+          disabled
+          title="Report download stays disabled until a real backend report object exists."
+        >
           Download Report
         </Button>
       </motion.div>
 
-      {/* Score Overview */}
+      <motion.div variants={item}>
+        <RuntimeNotice
+          title={
+            runtimeConfig.demoModeEnabled
+              ? 'Demo mode is enabled for this page.'
+              : 'Scores and suggestions are data-backed when present.'
+          }
+          description={
+            runtimeConfig.demoModeEnabled
+              ? 'The score shown here is synthetic because demo mode was explicitly enabled.'
+              : 'If the backend response is missing, the page remains blank instead of showing placeholder commentary.'
+          }
+          variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
+        />
+      </motion.div>
+
       <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="text-center bg-gradient-to-br from-purple-50 to-blue-50">
+        <Card className="text-center bg-gradient-to-br from-purple-50 to-cyan-50">
           <CardContent className="py-8">
             <p className="text-sm font-medium text-gray-500 mb-2">Overall Score</p>
             <div
@@ -114,14 +163,10 @@ export function HealthScorePage() {
                 <p className="text-sm text-gray-500">Strongest Area</p>
                 <p className="text-lg font-semibold text-gray-900">
                   {
-                    healthData.dimensions.reduce((max, d) =>
-                      d.score > max.score ? d : max
+                    healthData.dimensions.reduce((max, dimension) =>
+                      dimension.score > max.score ? dimension : max
                     ).dimension
                   }
-                </p>
-                <p className="text-sm text-emerald-600">
-                  Score:{' '}
-                  {Math.max(...healthData.dimensions.map((d) => d.score))}/100
                 </p>
               </div>
             </div>
@@ -138,14 +183,10 @@ export function HealthScorePage() {
                 <p className="text-sm text-gray-500">Needs Attention</p>
                 <p className="text-lg font-semibold text-gray-900">
                   {
-                    healthData.dimensions.reduce((min, d) =>
-                      d.score < min.score ? d : min
+                    healthData.dimensions.reduce((min, dimension) =>
+                      dimension.score < min.score ? dimension : min
                     ).dimension
                   }
-                </p>
-                <p className="text-sm text-amber-600">
-                  Score:{' '}
-                  {Math.min(...healthData.dimensions.map((d) => d.score))}/100
                 </p>
               </div>
             </div>
@@ -153,9 +194,7 @@ export function HealthScorePage() {
         </Card>
       </motion.div>
 
-      {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Radar Chart */}
         <motion.div variants={item}>
           <HealthScoreRadar
             dimensions={healthData.dimensions}
@@ -163,18 +202,16 @@ export function HealthScorePage() {
           />
         </motion.div>
 
-        {/* Quick Summary */}
         <motion.div variants={item}>
           <Card>
             <CardHeader>
               <CardTitle>Score Breakdown</CardTitle>
-              <CardDescription>
-                How you score across each dimension
-              </CardDescription>
+              <CardDescription>Dimension-wise scores from the current analysis</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {healthData.dimensions
+                  .slice()
                   .sort((a, b) => b.score - a.score)
                   .map((dimension, idx) => (
                     <div key={idx}>
@@ -190,12 +227,10 @@ export function HealthScorePage() {
                         </span>
                       </div>
                       <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${dimension.score}%` }}
-                          transition={{ duration: 0.8, delay: idx * 0.1 }}
+                        <div
                           className="h-full rounded-full"
                           style={{
+                            width: `${dimension.score}%`,
                             backgroundColor: getScoreColor(dimension.score),
                           }}
                         />
@@ -204,58 +239,17 @@ export function HealthScorePage() {
                   ))}
               </div>
 
-              {/* Improvement Potential */}
-              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700">
-                  <strong>Improvement Potential:</strong> By addressing the
-                  suggestions below, you could improve your overall score by up
-                  to{' '}
-                  <strong>
-                    {Math.round((improvementPotential / maxPossible) * 100)}
-                    points
-                  </strong>
-                  .
-                </p>
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg text-sm text-blue-700">
+                Improvement potential from the current score mix is about{' '}
+                <strong>{Math.round((improvementPotential / maxPossible) * 100)} points</strong>.
               </div>
             </CardContent>
           </Card>
         </motion.div>
       </div>
 
-      {/* Detailed Analysis */}
       <motion.div variants={item}>
         <HealthScoreDetails dimensions={healthData.dimensions} />
-      </motion.div>
-
-      {/* Action Items Summary */}
-      <motion.div variants={item}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Priority Actions</CardTitle>
-            <CardDescription>
-              Top recommendations to improve your financial health
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {healthData.dimensions
-                .filter((d) => d.score < 70)
-                .flatMap((d) => d.suggestions.slice(0, 1).map((s) => ({ dimension: d.dimension, suggestion: s })))
-                .slice(0, 6)
-                .map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-4 border border-gray-100 rounded-lg hover:border-blue-200 hover:bg-blue-50/50 transition-all"
-                  >
-                    <Badge variant="default" size="sm" className="mb-2">
-                      {item.dimension}
-                    </Badge>
-                    <p className="text-sm text-gray-700">{item.suggestion}</p>
-                  </div>
-                ))}
-            </div>
-          </CardContent>
-        </Card>
       </motion.div>
     </motion.div>
   );

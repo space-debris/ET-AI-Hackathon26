@@ -10,3 +10,4 @@ export { Tabs, TabsList, TabsTrigger, TabsContent } from './Tabs';
 export { StatCard, GradientStatCard } from './StatCard';
 export { Spinner, LoadingOverlay, LoadingCard } from './Spinner';
 export { EmptyState } from './EmptyState';
+export { RuntimeNotice } from './RuntimeNotice';

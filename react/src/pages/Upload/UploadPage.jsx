@@ -12,7 +12,8 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Progress } from '../../components/ui/Progress';
-import { portfolioApi } from '../../services/api';
+import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
+import { portfolioApi, runtimeConfig } from '../../services/api';
 import { clsx } from 'clsx';
 
 export function UploadPage() {
@@ -113,6 +114,20 @@ export function UploadPage() {
             Upload your CAMS or KFintech consolidated statement to analyze your portfolio
           </p>
         </div>
+
+        <RuntimeNotice
+          title={
+            runtimeConfig.demoModeEnabled
+              ? 'Demo mode is enabled for statement upload.'
+              : 'Live mode does not silently substitute demo portfolios.'
+          }
+          description={
+            runtimeConfig.demoModeEnabled
+              ? 'A successful upload in this mode loads explicit synthetic data only.'
+              : 'If parsing or backend processing fails, the page surfaces the failure instead of swapping in sample analysis.'
+          }
+          variant={runtimeConfig.demoModeEnabled ? 'demo' : 'live'}
+        />
 
         {/* Upload Card */}
         <Card>
