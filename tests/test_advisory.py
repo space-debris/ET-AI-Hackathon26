@@ -461,6 +461,30 @@ class TestSchemaModels:
         assert milestone.month == 7
         assert milestone.year == 2024
 
+    def test_generate_fire_plan_is_deterministic(self, advisory_agent, basic_profile):
+        """FIRE plan generation should use local deterministic math."""
+        fire_plan = advisory_agent.generate_fire_plan(basic_profile)
+
+        assert isinstance(fire_plan, FIREPlan)
+        assert fire_plan.current_corpus == pytest.approx(700000.0)
+        assert fire_plan.target_corpus > fire_plan.current_corpus
+        assert fire_plan.years_to_retirement == 20
+        assert fire_plan.monthly_sip_required >= 0
+        assert len(fire_plan.milestones) == 20
+        assert fire_plan.milestones[0].equity_pct >= fire_plan.milestones[-1].equity_pct
+        assert fire_plan.at_current_trajectory
+
+        retirement_year, retirement_month = fire_plan.expected_retirement_date.split("-")
+        assert len(retirement_year) == 4
+        assert 1 <= int(retirement_month) <= 12
+
+        first_mix = (
+            fire_plan.milestones[0].equity_pct
+            + fire_plan.milestones[0].debt_pct
+            + fire_plan.milestones[0].gold_pct
+        )
+        assert first_mix == pytest.approx(100.0, abs=0.2)
+
 
 # =============================================================================
 # LangGraph Node Function Tests (mocked LLM)
@@ -525,6 +549,34 @@ class TestRebalancingPlanParsing:
         assert len(actions) == 1
         assert actions[0].fund_name == "HDFC Mid-Cap Opp Fund"
         assert actions[0].tax_impact == ""
+
+    def test_falls_back_to_deterministic_rebalancing_when_llm_fails(self, advisory_agent, sample_analytics, basic_profile):
+        advisory_agent._call_llm = MagicMock(side_effect=RuntimeError("No Gemini key"))
+
+        actions = advisory_agent.generate_rebalancing_plan(sample_analytics, basic_profile)
+
+        assert len(actions) == len(sample_analytics.holdings)
+        assert any(action.action in (RebalancingActionType.SWITCH, RebalancingActionType.REDUCE) for action in actions)
+        assert all(action.rationale for action in actions)
+
+
+class TestHealthScoreFallback:
+    def test_falls_back_to_deterministic_health_score_when_llm_fails(self, advisory_agent, sample_analytics, basic_profile):
+        advisory_agent._call_llm = MagicMock(side_effect=RuntimeError("No Gemini key"))
+
+        health_score = advisory_agent.generate_health_score(sample_analytics, basic_profile)
+
+        assert len(health_score) == 6
+        assert {dimension.dimension for dimension in health_score} == {
+            "diversification",
+            "cost_efficiency",
+            "tax_efficiency",
+            "risk_alignment",
+            "goal_readiness",
+            "liquidity",
+        }
+        assert all(0 <= dimension.score <= 100 for dimension in health_score)
+        assert all(dimension.rationale for dimension in health_score)
 
 
 # =============================================================================

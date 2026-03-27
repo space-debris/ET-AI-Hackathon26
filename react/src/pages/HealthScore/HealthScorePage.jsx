@@ -8,7 +8,7 @@ import { Spinner } from '../../components/ui/Spinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { HealthScoreRadar, HealthScoreDetails } from '../../components/charts/HealthScoreChart';
-import { healthApi, reportApi, runtimeConfig } from '../../services/api';
+import { healthApi, reportApi, runtimeConfig, userApi } from '../../services/api';
 import { getScoreColor, getScoreLabel } from '../../utils/helpers';
 
 const container = {
@@ -34,6 +34,15 @@ export function HealthScorePage() {
   useEffect(() => {
     async function fetchData() {
       try {
+        try {
+          await userApi.getProfile();
+        } catch {
+          const cachedProfile = userApi.getCachedProfile();
+          if (cachedProfile) {
+            await userApi.updateProfile(cachedProfile);
+          }
+        }
+
         const [data, report] = await Promise.all([
           healthApi.getScore(),
           reportApi.getReport(),

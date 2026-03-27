@@ -37,6 +37,86 @@ const metroOptions = [
   { value: 'false', label: 'Non-Metro City' },
 ];
 
+const TAX_COMPARISON_CACHE_KEY = 'finsage-tax-comparison-cache-v1';
+const SESSION_STORAGE_KEY = 'finsage-session-id-v2';
+const defaultTaxProfile = {
+  age: 30,
+  annualIncome: 2400000,
+  existingInvestments: {},
+  monthlyExpenses: 40000,
+  targetRetirementAge: 60,
+  targetMonthlyCorpus: 0,
+  riskProfile: 'moderate',
+  baseSalary: 1800000,
+  hraReceived: 360000,
+  rentPaid: 480000,
+  metroCity: true,
+  section80C: 150000,
+  npsContribution: 50000,
+  medicalInsurancePremium: 25000,
+  homeLoanInterest: 0,
+  otherDeductions: 0,
+};
+
+const hasOwnValue = (object, key) => Object.prototype.hasOwnProperty.call(object ?? {}, key);
+
+const getProfileSignature = (profile) => JSON.stringify(profile);
+
+const getCurrentSessionId = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage.getItem(SESSION_STORAGE_KEY);
+};
+
+const readCachedTaxComparison = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(TAX_COMPARISON_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedTaxComparison = (profile, taxData) => {
+  if (typeof window === 'undefined' || !taxData) {
+    return;
+  }
+
+  const payload = {
+    sessionId: getCurrentSessionId(),
+    profileSignature: getProfileSignature(profile),
+    taxData,
+  };
+
+  window.localStorage.setItem(TAX_COMPARISON_CACHE_KEY, JSON.stringify(payload));
+};
+
+const restoreCachedTaxComparison = (profile) => {
+  const cached = readCachedTaxComparison();
+  if (!cached?.taxData) {
+    return null;
+  }
+
+  const currentSessionId = getCurrentSessionId();
+  if (cached.sessionId && currentSessionId && cached.sessionId !== currentSessionId) {
+    return null;
+  }
+
+  return cached.profileSignature === getProfileSignature(profile) ? cached.taxData : null;
+};
+
+const pickNumber = (savedProfile, key, fallback) => (
+  hasOwnValue(savedProfile, key) && savedProfile[key] !== null && savedProfile[key] !== undefined
+    ? Number(savedProfile[key]) || 0
+    : fallback
+);
+
 const hasMeaningfulTaxProfile = (savedProfile) => (
   (savedProfile?.annualIncome ?? 0) > 0 ||
   (savedProfile?.baseSalary ?? 0) > 0 ||
@@ -51,32 +131,40 @@ const hasMeaningfulTaxProfile = (savedProfile) => (
 
 const mergeTaxProfile = (defaults, savedProfile) => ({
   ...defaults,
-  annualIncome:
-    (savedProfile?.annualIncome ?? 0) > 0 ? savedProfile.annualIncome : defaults.annualIncome,
-  baseSalary:
-    (savedProfile?.baseSalary ?? 0) > 0 ? savedProfile.baseSalary : defaults.baseSalary,
-  hraReceived:
-    (savedProfile?.hraReceived ?? 0) > 0 ? savedProfile.hraReceived : defaults.hraReceived,
-  rentPaid: (savedProfile?.rentPaid ?? 0) > 0 ? savedProfile.rentPaid : defaults.rentPaid,
-  metroCity: savedProfile?.metroCity ?? defaults.metroCity,
-  section80C:
-    (savedProfile?.section80C ?? 0) > 0 ? savedProfile.section80C : defaults.section80C,
-  npsContribution:
-    (savedProfile?.npsContribution ?? 0) > 0
-      ? savedProfile.npsContribution
-      : defaults.npsContribution,
-  medicalInsurancePremium:
-    (savedProfile?.medicalInsurancePremium ?? 0) > 0
-      ? savedProfile.medicalInsurancePremium
-      : defaults.medicalInsurancePremium,
-  homeLoanInterest:
-    (savedProfile?.homeLoanInterest ?? 0) > 0
-      ? savedProfile.homeLoanInterest
-      : defaults.homeLoanInterest,
-  otherDeductions:
-    (savedProfile?.otherDeductions ?? 0) > 0
-      ? savedProfile.otherDeductions
-      : defaults.otherDeductions,
+  age: pickNumber(savedProfile, 'age', defaults.age),
+  monthlyExpenses: pickNumber(savedProfile, 'monthlyExpenses', defaults.monthlyExpenses),
+  annualIncome: pickNumber(savedProfile, 'annualIncome', defaults.annualIncome),
+  existingInvestments: hasOwnValue(savedProfile, 'existingInvestments')
+    ? savedProfile.existingInvestments ?? {}
+    : defaults.existingInvestments,
+  targetRetirementAge: pickNumber(
+    savedProfile,
+    'targetRetirementAge',
+    defaults.targetRetirementAge
+  ),
+  targetMonthlyCorpus: pickNumber(
+    savedProfile,
+    'targetMonthlyCorpus',
+    defaults.targetMonthlyCorpus
+  ),
+  riskProfile: hasOwnValue(savedProfile, 'riskProfile')
+    ? savedProfile.riskProfile ?? defaults.riskProfile
+    : defaults.riskProfile,
+  baseSalary: pickNumber(savedProfile, 'baseSalary', defaults.baseSalary),
+  hraReceived: pickNumber(savedProfile, 'hraReceived', defaults.hraReceived),
+  rentPaid: pickNumber(savedProfile, 'rentPaid', defaults.rentPaid),
+  metroCity: hasOwnValue(savedProfile, 'metroCity')
+    ? savedProfile.metroCity === true || savedProfile.metroCity === 'true'
+    : defaults.metroCity,
+  section80C: pickNumber(savedProfile, 'section80C', defaults.section80C),
+  npsContribution: pickNumber(savedProfile, 'npsContribution', defaults.npsContribution),
+  medicalInsurancePremium: pickNumber(
+    savedProfile,
+    'medicalInsurancePremium',
+    defaults.medicalInsurancePremium
+  ),
+  homeLoanInterest: pickNumber(savedProfile, 'homeLoanInterest', defaults.homeLoanInterest),
+  otherDeductions: pickNumber(savedProfile, 'otherDeductions', defaults.otherDeductions),
 });
 
 export function TaxOptimizerPage() {
@@ -86,23 +174,18 @@ export function TaxOptimizerPage() {
   const autoRefreshEnabled = useRef(false);
   const hydratingProfile = useRef(true);
   const lastSyncedProfile = useRef('');
-  const [profile, setProfile] = useState({
-    annualIncome: 2400000,
-    baseSalary: 1800000,
-    hraReceived: 360000,
-    rentPaid: 480000,
-    metroCity: true,
-    section80C: 150000,
-    npsContribution: 50000,
-    medicalInsurancePremium: 25000,
-    homeLoanInterest: 0,
-    otherDeductions: 0,
-  });
+  const [profile, setProfile] = useState(defaultTaxProfile);
 
   const handleProfileChange = (field, value) => {
+    const numericValue = value === '' ? 0 : Number(value);
     setProfile((prev) => ({
       ...prev,
-      [field]: field === 'metroCity' ? value === 'true' : parseInt(value, 10) || 0,
+      [field]:
+        field === 'metroCity'
+          ? value === 'true'
+          : Number.isFinite(numericValue)
+            ? numericValue
+            : 0,
     }));
   };
 
@@ -111,13 +194,47 @@ export function TaxOptimizerPage() {
 
     async function hydrateProfile() {
       try {
+        let nextProfile = defaultTaxProfile;
         const savedProfile = await userApi.getProfile();
-        if (!active || !savedProfile || !hasMeaningfulTaxProfile(savedProfile)) {
+        if (active && savedProfile && hasMeaningfulTaxProfile(savedProfile)) {
+          nextProfile = mergeTaxProfile(defaultTaxProfile, savedProfile);
+          setProfile(nextProfile);
+        }
+
+        if (!active) {
           return;
         }
-        setProfile((prev) => mergeTaxProfile(prev, savedProfile));
+
+        const cachedTaxData = restoreCachedTaxComparison(nextProfile);
+        if (cachedTaxData) {
+          setTaxData(cachedTaxData);
+          autoRefreshEnabled.current = true;
+          lastSyncedProfile.current = getProfileSignature(nextProfile);
+        }
       } catch {
-        // Keep the validation defaults when no saved session profile exists.
+        if (!active) {
+          return;
+        }
+
+        const cachedProfile = userApi.getCachedProfile();
+        const nextProfile =
+          cachedProfile && hasMeaningfulTaxProfile(cachedProfile)
+            ? mergeTaxProfile(defaultTaxProfile, cachedProfile)
+            : defaultTaxProfile;
+
+        if (cachedProfile && hasMeaningfulTaxProfile(cachedProfile)) {
+          setProfile(nextProfile);
+          userApi.updateProfile(nextProfile).catch(() => {
+            // Keep the local restore even if the backend session cannot be refreshed yet.
+          });
+        }
+
+        const cachedTaxData = restoreCachedTaxComparison(nextProfile);
+        if (cachedTaxData) {
+          setTaxData(cachedTaxData);
+          autoRefreshEnabled.current = true;
+          lastSyncedProfile.current = getProfileSignature(nextProfile);
+        }
       } finally {
         hydratingProfile.current = false;
       }
@@ -137,8 +254,9 @@ export function TaxOptimizerPage() {
     try {
       const data = await taxApi.compareRegimes(profile);
       setTaxData(data);
+      writeCachedTaxComparison(profile, data);
       autoRefreshEnabled.current = true;
-      lastSyncedProfile.current = JSON.stringify(profile);
+      lastSyncedProfile.current = getProfileSignature(profile);
     } catch (calculateError) {
       console.error('Failed to calculate tax comparison:', calculateError);
       setTaxData(null);
@@ -149,7 +267,7 @@ export function TaxOptimizerPage() {
   };
 
   useEffect(() => {
-    const profileSignature = JSON.stringify(profile);
+    const profileSignature = getProfileSignature(profile);
 
     if (
       !autoRefreshEnabled.current ||
@@ -166,6 +284,7 @@ export function TaxOptimizerPage() {
         setError(null);
         const data = await taxApi.compareRegimes(profile);
         setTaxData(data);
+        writeCachedTaxComparison(profile, data);
         lastSyncedProfile.current = profileSignature;
       } catch (calculateError) {
         console.error('Failed to refresh tax comparison:', calculateError);

@@ -40,37 +40,122 @@ const riskProfiles = [
   { value: 'aggressive', label: 'Aggressive' },
 ];
 
+const FIRE_PLAN_CACHE_KEY = 'finsage-fire-plan-cache-v1';
+const SESSION_STORAGE_KEY = 'finsage-session-id-v2';
+const defaultFireProfile = {
+  age: 34,
+  annualIncome: 2400000,
+  monthlyExpenses: 80000,
+  existingInvestments: 2400000,
+  targetRetirementAge: 50,
+  targetMonthlyCorpus: 150000,
+  riskProfile: 'moderate',
+};
+
+const hasOwnValue = (object, key) => Object.prototype.hasOwnProperty.call(object ?? {}, key);
+
+const getProfileSignature = (profile) => JSON.stringify(profile);
+
+const getCurrentSessionId = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage.getItem(SESSION_STORAGE_KEY);
+};
+
+const readCachedFirePlan = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(FIRE_PLAN_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedFirePlan = (profile, firePlan) => {
+  if (typeof window === 'undefined' || !firePlan) {
+    return;
+  }
+
+  const payload = {
+    sessionId: getCurrentSessionId(),
+    profileSignature: getProfileSignature(profile),
+    firePlan,
+  };
+
+  window.localStorage.setItem(FIRE_PLAN_CACHE_KEY, JSON.stringify(payload));
+};
+
+const restoreCachedFirePlan = (profile) => {
+  const cached = readCachedFirePlan();
+  if (!cached?.firePlan) {
+    return null;
+  }
+
+  const currentSessionId = getCurrentSessionId();
+  if (cached.sessionId && currentSessionId && cached.sessionId !== currentSessionId) {
+    return null;
+  }
+
+  return cached.profileSignature === getProfileSignature(profile) ? cached.firePlan : null;
+};
+
+const toNumericCorpus = (existingInvestments) => {
+  if (typeof existingInvestments === 'number') {
+    return existingInvestments;
+  }
+
+  if (existingInvestments && typeof existingInvestments === 'object') {
+    return Object.values(existingInvestments).reduce(
+      (sum, value) => sum + (Number(value) || 0),
+      0
+    );
+  }
+
+  return 0;
+};
+
+const pickNumber = (savedProfile, key, fallback) => (
+  hasOwnValue(savedProfile, key) && savedProfile[key] !== null && savedProfile[key] !== undefined
+    ? Number(savedProfile[key]) || 0
+    : fallback
+);
+
 const hasMeaningfulFireProfile = (savedProfile) => (
   (savedProfile?.age ?? 0) > 0 ||
   (savedProfile?.annualIncome ?? 0) > 0 ||
   (savedProfile?.monthlyExpenses ?? 0) > 0 ||
-  (savedProfile?.existingInvestments ?? 0) > 0 ||
+  toNumericCorpus(savedProfile?.existingInvestments) > 0 ||
   (savedProfile?.targetRetirementAge ?? 0) > 0 ||
   (savedProfile?.targetMonthlyCorpus ?? 0) > 0
 );
 
 const mergeFireProfile = (defaults, savedProfile) => ({
   ...defaults,
-  age: (savedProfile?.age ?? 0) > 0 ? savedProfile.age : defaults.age,
-  annualIncome:
-    (savedProfile?.annualIncome ?? 0) > 0 ? savedProfile.annualIncome : defaults.annualIncome,
-  monthlyExpenses:
-    (savedProfile?.monthlyExpenses ?? 0) > 0
-      ? savedProfile.monthlyExpenses
-      : defaults.monthlyExpenses,
-  existingInvestments:
-    (savedProfile?.existingInvestments ?? 0) > 0
-      ? savedProfile.existingInvestments
-      : defaults.existingInvestments,
-  targetRetirementAge:
-    (savedProfile?.targetRetirementAge ?? 0) > 0
-      ? savedProfile.targetRetirementAge
-      : defaults.targetRetirementAge,
-  targetMonthlyCorpus:
-    (savedProfile?.targetMonthlyCorpus ?? 0) > 0
-      ? savedProfile.targetMonthlyCorpus
-      : defaults.targetMonthlyCorpus,
-  riskProfile: savedProfile?.riskProfile ?? defaults.riskProfile,
+  age: pickNumber(savedProfile, 'age', defaults.age),
+  annualIncome: pickNumber(savedProfile, 'annualIncome', defaults.annualIncome),
+  monthlyExpenses: pickNumber(savedProfile, 'monthlyExpenses', defaults.monthlyExpenses),
+  existingInvestments: hasOwnValue(savedProfile, 'existingInvestments')
+    ? toNumericCorpus(savedProfile.existingInvestments)
+    : defaults.existingInvestments,
+  targetRetirementAge: pickNumber(
+    savedProfile,
+    'targetRetirementAge',
+    defaults.targetRetirementAge
+  ),
+  targetMonthlyCorpus: pickNumber(
+    savedProfile,
+    'targetMonthlyCorpus',
+    defaults.targetMonthlyCorpus
+  ),
+  riskProfile: hasOwnValue(savedProfile, 'riskProfile')
+    ? savedProfile.riskProfile ?? defaults.riskProfile
+    : defaults.riskProfile,
 });
 
 export function FIREPlannerPage() {
@@ -80,18 +165,20 @@ export function FIREPlannerPage() {
   const autoRefreshEnabled = useRef(false);
   const hydratingProfile = useRef(true);
   const lastSyncedProfile = useRef('');
-  const [profile, setProfile] = useState({
-    age: 34,
-    annualIncome: 2400000,
-    monthlyExpenses: 80000,
-    existingInvestments: 2400000,
-    targetRetirementAge: 50,
-    targetMonthlyCorpus: 150000,
-    riskProfile: 'moderate',
-  });
+  const latestRequestId = useRef(0);
+  const [profile, setProfile] = useState(defaultFireProfile);
 
   const handleProfileChange = (field, value) => {
-    setProfile((prev) => ({ ...prev, [field]: value }));
+    const numericValue = value === '' ? 0 : Number(value);
+    setProfile((prev) => ({
+      ...prev,
+      [field]:
+        field === 'riskProfile'
+          ? value
+          : Number.isFinite(numericValue)
+            ? numericValue
+            : 0,
+    }));
   };
 
   useEffect(() => {
@@ -99,13 +186,47 @@ export function FIREPlannerPage() {
 
     async function hydrateProfile() {
       try {
+        let nextProfile = defaultFireProfile;
         const savedProfile = await userApi.getProfile();
-        if (!active || !savedProfile || !hasMeaningfulFireProfile(savedProfile)) {
+        if (active && savedProfile && hasMeaningfulFireProfile(savedProfile)) {
+          nextProfile = mergeFireProfile(defaultFireProfile, savedProfile);
+          setProfile(nextProfile);
+        }
+
+        if (!active) {
           return;
         }
-        setProfile((prev) => mergeFireProfile(prev, savedProfile));
+
+        const cachedPlan = restoreCachedFirePlan(nextProfile);
+        if (cachedPlan) {
+          setFirePlan(cachedPlan);
+          autoRefreshEnabled.current = true;
+          lastSyncedProfile.current = getProfileSignature(nextProfile);
+        }
       } catch {
-        // Keep the default validation profile if no session profile exists yet.
+        if (!active) {
+          return;
+        }
+
+        const cachedProfile = userApi.getCachedProfile();
+        const nextProfile =
+          cachedProfile && hasMeaningfulFireProfile(cachedProfile)
+            ? mergeFireProfile(defaultFireProfile, cachedProfile)
+            : defaultFireProfile;
+
+        if (cachedProfile && hasMeaningfulFireProfile(cachedProfile)) {
+          setProfile(nextProfile);
+          userApi.updateProfile(nextProfile).catch(() => {
+            // Keep the local restore even if the backend session cannot be refreshed yet.
+          });
+        }
+
+        const cachedPlan = restoreCachedFirePlan(nextProfile);
+        if (cachedPlan) {
+          setFirePlan(cachedPlan);
+          autoRefreshEnabled.current = true;
+          lastSyncedProfile.current = getProfileSignature(nextProfile);
+        }
       } finally {
         hydratingProfile.current = false;
       }
@@ -119,6 +240,8 @@ export function FIREPlannerPage() {
   }, []);
 
   const handleRunPlan = async () => {
+    const requestId = latestRequestId.current + 1;
+    latestRequestId.current = requestId;
     setUpdating(true);
     setError(null);
 
@@ -126,20 +249,28 @@ export function FIREPlannerPage() {
       const data = firePlan
         ? await fireApi.updatePlan(profile)
         : await fireApi.generatePlan(profile);
+      if (requestId !== latestRequestId.current) {
+        return;
+      }
       setFirePlan(data);
+      writeCachedFirePlan(profile, data);
       autoRefreshEnabled.current = true;
-      lastSyncedProfile.current = JSON.stringify(profile);
+      lastSyncedProfile.current = getProfileSignature(profile);
     } catch (runError) {
+      if (requestId !== latestRequestId.current) {
+        return;
+      }
       console.error('Failed to run FIRE plan:', runError);
-      setFirePlan(null);
       setError(runError.message);
     } finally {
-      setUpdating(false);
+      if (requestId === latestRequestId.current) {
+        setUpdating(false);
+      }
     }
   };
 
   useEffect(() => {
-    const profileSignature = JSON.stringify(profile);
+    const profileSignature = getProfileSignature(profile);
 
     if (
       !autoRefreshEnabled.current ||
@@ -151,18 +282,28 @@ export function FIREPlannerPage() {
     }
 
     const timer = window.setTimeout(async () => {
+      const requestId = latestRequestId.current + 1;
+      latestRequestId.current = requestId;
       try {
         setUpdating(true);
         setError(null);
         const data = await fireApi.updatePlan(profile);
+        if (requestId !== latestRequestId.current) {
+          return;
+        }
         setFirePlan(data);
+        writeCachedFirePlan(profile, data);
         lastSyncedProfile.current = profileSignature;
       } catch (runError) {
+        if (requestId !== latestRequestId.current) {
+          return;
+        }
         console.error('Failed to refresh FIRE plan:', runError);
-        setFirePlan(null);
         setError(runError.message);
       } finally {
-        setUpdating(false);
+        if (requestId === latestRequestId.current) {
+          setUpdating(false);
+        }
       }
     }, 900);
 

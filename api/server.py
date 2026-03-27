@@ -271,6 +271,7 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Session-Id")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+        self.send_header("Access-Control-Expose-Headers", "X-Session-Id")
         if session_id:
             self.send_header("X-Session-Id", session_id)
 

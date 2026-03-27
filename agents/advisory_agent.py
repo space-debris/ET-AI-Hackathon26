@@ -211,6 +211,245 @@ class AdvisoryAgent:
     # 1. REBALANCING PLAN
     # =========================================================================
 
+    @staticmethod
+    def _safe_pct(value: float) -> float:
+        return max(0.0, min(100.0, float(value)))
+
+    @staticmethod
+    def _format_inr(value: float) -> str:
+        return f"₹{value:,.0f}"
+
+    def _generate_deterministic_rebalancing_plan(
+        self,
+        analytics: PortfolioAnalytics,
+        profile: UserFinancialProfile,
+    ) -> List[RebalancingAction]:
+        actions: List[RebalancingAction] = []
+        category_totals = analytics.category_allocation or {}
+        large_category = max(category_totals.values(), default=0.0)
+        overlap_stocks = set(analytics.overlap_matrix.keys())
+
+        for holding in analytics.holdings:
+            rationale_parts: List[str] = []
+            tax_impact = "Review capital-gains impact before switching."
+            priority = 3
+            percentage: Optional[float] = None
+            target_fund: Optional[str] = None
+            action = RebalancingActionType.HOLD
+
+            expense_gap = (
+                (holding.expense_ratio - holding.direct_expense_ratio)
+                if holding.direct_expense_ratio is not None
+                else 0.0
+            )
+            overlap_count = sum(
+                1
+                for stock in overlap_stocks
+                if holding.fund_name in analytics.overlap_matrix.get(stock, {})
+            )
+            category_key = holding.category.value if holding.category else "other"
+            category_weight = category_totals.get(category_key, 0.0)
+            underperforming = (holding.xirr or 0.0) < max(analytics.overall_xirr - 0.03, 0.08)
+
+            if holding.plan_type == "regular" or getattr(holding.plan_type, "value", None) == "regular":
+                if expense_gap > 0.003:
+                    action = RebalancingActionType.SWITCH
+                    priority = 1
+                    target_fund = f"{holding.fund_name} Direct Plan"
+                    annual_drag = holding.current_value * expense_gap
+                    tax_impact = (
+                        "Likely LTCG-friendly if held over one year."
+                        if not holding.is_stcg_eligible
+                        else "STCG may apply if switched before one year."
+                    )
+                    rationale_parts.append(
+                        f"Switching can reduce annual cost drag by about {self._format_inr(annual_drag)}."
+                    )
+
+            if action == RebalancingActionType.HOLD and overlap_count >= 1 and category_weight >= 35:
+                action = RebalancingActionType.REDUCE
+                percentage = 10 if overlap_count == 1 else 15
+                priority = 2
+                tax_impact = (
+                    "STCG may apply if units are held for less than one year."
+                    if holding.is_stcg_eligible
+                    else "LTCG rules may apply on realised gains."
+                )
+                rationale_parts.append(
+                    f"The fund overlaps on {overlap_count} recurring stock signal(s) inside a {category_weight:.1f}% category tilt."
+                )
+
+            if action == RebalancingActionType.HOLD and underperforming and holding.unrealised_gain_pct > 20:
+                action = RebalancingActionType.REDUCE
+                percentage = 10
+                priority = 3
+                tax_impact = (
+                    "Review realised gains before trimming."
+                    if holding.unrealised_gain > 0
+                    else "Minimal tax friction if gains are limited."
+                )
+                rationale_parts.append(
+                    f"Fund XIRR of {(holding.xirr or 0.0) * 100:.1f}% is lagging the portfolio trend."
+                )
+
+            if action == RebalancingActionType.HOLD:
+                tax_impact = (
+                    "No immediate tax action required."
+                    if not holding.is_stcg_eligible
+                    else "Avoid unnecessary churn while units are still in STCG period."
+                )
+                rationale_parts.append(
+                    f"The holding remains broadly aligned with a {profile.risk_profile.value} risk profile."
+                )
+
+            rationale_parts.append(
+                f"Current value is {self._format_inr(holding.current_value)} with {(holding.xirr or analytics.overall_xirr) * 100:.1f}% XIRR."
+            )
+
+            actions.append(
+                RebalancingAction(
+                    fund_name=holding.fund_name,
+                    action=action,
+                    percentage=percentage,
+                    amount_inr=None,
+                    target_fund=target_fund,
+                    tax_impact=tax_impact,
+                    rationale=" ".join(rationale_parts),
+                    priority=priority,
+                )
+            )
+
+        return actions
+
+    def _generate_deterministic_health_score(
+        self,
+        analytics: PortfolioAnalytics,
+        profile: UserFinancialProfile,
+    ) -> List[HealthScoreDimension]:
+        holdings = analytics.holdings
+        total_value = analytics.total_current_value or 1.0
+        overlap_count = len(analytics.overlap_matrix)
+        regular_count = sum(1 for holding in holdings if holding.plan_type.value == "regular")
+        short_term_count = sum(1 for holding in holdings if holding.is_stcg_eligible)
+        emergency_months = total_value / max(profile.monthly_expenses, 1) if profile.monthly_expenses > 0 else 0
+        years_to_retirement = max(profile.target_retirement_age - profile.age, 0)
+        target_corpus = self.generate_fire_plan(profile).target_corpus if profile.target_monthly_corpus > 0 else 0
+        goal_progress = (
+            analytics.total_current_value / target_corpus if target_corpus > 0 else 0
+        )
+
+        category_count = len([weight for weight in analytics.category_allocation.values() if weight > 0])
+        max_category = max(analytics.category_allocation.values(), default=100.0)
+        max_amc = max(analytics.amc_allocation.values(), default=100.0)
+        diversification_score = self._safe_pct(
+            45 + category_count * 10 - max(0, max_category - 35) - max(0, max_amc - 45) - overlap_count * 6
+        )
+
+        avg_expense = (
+            sum(holding.expense_ratio for holding in holdings) / len(holdings)
+            if holdings
+            else 0.0
+        )
+        cost_efficiency_score = self._safe_pct(
+            92 - regular_count * 12 - analytics.expense_ratio_drag_inr / 2500 - avg_expense * 1200
+        )
+
+        tax_efficiency_score = self._safe_pct(
+            88 - short_term_count * 18 - max(0, regular_count - 1) * 4
+        )
+
+        equity_categories = {FundCategory.LARGE_CAP, FundCategory.MID_CAP, FundCategory.SMALL_CAP, FundCategory.FLEXI_CAP, FundCategory.ELSS}
+        equity_weight = sum(
+            analytics.category_allocation.get(category.value, 0.0)
+            for category in equity_categories
+        )
+        target_equity = {
+            RiskProfile.CONSERVATIVE: 45.0,
+            RiskProfile.MODERATE: 65.0,
+            RiskProfile.AGGRESSIVE: 80.0,
+        }.get(profile.risk_profile, 65.0)
+        risk_alignment_score = self._safe_pct(
+            94 - abs(equity_weight - target_equity) * 1.4
+        )
+
+        goal_readiness_score = self._safe_pct(
+            35
+            + min(goal_progress * 45, 45)
+            + min(max(analytics.overall_xirr, 0) * 120, 20)
+            + (8 if years_to_retirement >= 10 else 0)
+        )
+
+        liquidity_score = self._safe_pct(
+            30 + min(emergency_months * 8, 50) + (10 if profile.monthly_expenses <= profile.annual_income / 24 else 0)
+        )
+
+        score_map = [
+            (
+                "diversification",
+                diversification_score,
+                f"The portfolio is spread across {category_count} active categories with the largest bucket at {max_category:.1f}% and AMC concentration at {max_amc:.1f}%.",
+                [
+                    "Trim category concentration if a single segment dominates the portfolio.",
+                    "Reduce repeated stock overlap across multiple funds."
+                ],
+            ),
+            (
+                "cost_efficiency",
+                cost_efficiency_score,
+                f"{regular_count} fund(s) still look like regular plans and the annual expense drag is about {self._format_inr(analytics.expense_ratio_drag_inr)}.",
+                [
+                    "Review direct-plan equivalents for regular holdings.",
+                    "Prioritise funds with the highest expense gap first."
+                ],
+            ),
+            (
+                "tax_efficiency",
+                tax_efficiency_score,
+                f"{short_term_count} holding(s) may still be inside the STCG window, which can reduce flexibility on exits or switches.",
+                [
+                    "Avoid unnecessary churn before one year when possible.",
+                    "Use ELSS or long-held units more efficiently for tax-aware rebalancing."
+                ],
+            ),
+            (
+                "risk_alignment",
+                risk_alignment_score,
+                f"Equity-oriented allocation is about {equity_weight:.1f}% versus an estimated {target_equity:.0f}% range for a {profile.risk_profile.value} profile.",
+                [
+                    "Adjust the equity-debt mix if the portfolio is drifting away from your risk profile.",
+                    "Review mid-cap and sector concentration during volatility."
+                ],
+            ),
+            (
+                "goal_readiness",
+                goal_readiness_score,
+                f"Current corpus of {self._format_inr(analytics.total_current_value)} is building toward the retirement goal over the next {years_to_retirement} years.",
+                [
+                    "Increase SIPs when surplus improves to accelerate goal progress.",
+                    "Review the retirement target yearly against inflation."
+                ],
+            ),
+            (
+                "liquidity",
+                liquidity_score,
+                f"The current portfolio value covers roughly {emergency_months:.1f} month(s) of expenses at the current burn rate.",
+                [
+                    "Keep a dedicated emergency buffer outside long-term market-linked allocations.",
+                    "Add liquid or low-volatility assets if near-term cash needs are rising."
+                ],
+            ),
+        ]
+
+        return [
+            HealthScoreDimension(
+                dimension=dimension,
+                score=round(score, 1),
+                rationale=rationale,
+                suggestions=suggestions,
+            )
+            for dimension, score, rationale, suggestions in score_map
+        ]
+
     def generate_rebalancing_plan(
         self,
         analytics: PortfolioAnalytics,
@@ -271,8 +510,12 @@ Generate a JSON array of RebalancingAction objects. Each must have:
 
 Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
 """
-        response = self._call_llm(user_prompt)
-        parsed = self._parse_json_response(response)
+        try:
+            response = self._call_llm(user_prompt)
+            parsed = self._parse_json_response(response)
+        except Exception as exc:
+            logger.warning("Falling back to deterministic rebalancing plan: %s", exc)
+            return self._generate_deterministic_rebalancing_plan(analytics, profile)
 
         # Ensure it's a list
         if isinstance(parsed, dict) and "rebalancing_plan" in parsed:
@@ -306,7 +549,7 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
                 logger.warning(f"Failed to parse rebalancing action: {e}, item: {item}")
                 continue
 
-        return actions
+        return actions or self._generate_deterministic_rebalancing_plan(analytics, profile)
 
     # =========================================================================
     # 2. FIRE PLAN
@@ -316,62 +559,278 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
         self, profile: UserFinancialProfile
     ) -> FIREPlan:
         """
-        Generate a comprehensive FIRE Path Plan with month-by-month glidepath.
+        Generate a comprehensive FIRE Path Plan with deterministic local math.
 
-        Fills the prompt template with user profile data and sends to LLM.
+        This intentionally avoids LLM latency and retry variance so the
+        standalone FIRE planner remains fast and reliable.
         """
         existing_corpus = sum(profile.existing_investments.values())
         current_sip = max(0, profile.annual_income / 12 - profile.monthly_expenses)
-
-        prompt = self.fire_prompt_template.format(
-            age=profile.age,
-            annual_income=f"{profile.annual_income:,.0f}",
-            monthly_expenses=f"{profile.monthly_expenses:,.0f}",
-            existing_corpus=f"{existing_corpus:,.0f}",
-            existing_investments=json.dumps(profile.existing_investments),
-            target_retirement_age=profile.target_retirement_age,
-            target_monthly_draw=f"{profile.target_monthly_corpus:,.0f}",
-            risk_profile=profile.risk_profile.value,
-            current_sip=f"{current_sip:,.0f}",
-            inflation_rate=config.ASSUMED_INFLATION_RATE * 100,
-            equity_return=config.ASSUMED_EQUITY_RETURN * 100,
-            debt_return=config.ASSUMED_DEBT_RETURN * 100,
-            gold_return=config.ASSUMED_GOLD_RETURN * 100,
-            swr=config.SAFE_WITHDRAWAL_RATE * 100,
-            life_expectancy=config.LIFE_EXPECTANCY,
+        years_to_retirement = max(profile.target_retirement_age - profile.age, 0)
+        inflation_factor = (1 + config.ASSUMED_INFLATION_RATE) ** years_to_retirement
+        annual_retirement_need = profile.target_monthly_corpus * 12 * inflation_factor
+        target_corpus = (
+            annual_retirement_need / config.SAFE_WITHDRAWAL_RATE
+            if config.SAFE_WITHDRAWAL_RATE > 0
+            else 0.0
+        )
+        monthly_sip_required = self._solve_required_monthly_sip(
+            profile,
+            target_corpus,
+            years_to_retirement,
+        )
+        milestones, projected_corpus = self._simulate_fire_path(
+            profile,
+            monthly_sip_required,
+            years_to_retirement,
+        )
+        expected_retirement_date = self._format_year_month_offset(years_to_retirement * 12)
+        insurance_gap = self._estimate_insurance_gap(profile, existing_corpus)
+        at_current_trajectory = self._estimate_fire_trajectory(
+            profile,
+            target_corpus,
+            current_sip,
+            years_to_retirement,
         )
 
-        response = self._call_llm(prompt)
-        parsed = self._parse_json_response(response)
-
-        # Parse milestones
-        milestones = []
-        for m in parsed.get("milestones", []):
-            try:
-                milestones.append(self._coerce_fire_milestone(m))
-            except Exception as e:
-                logger.warning(f"Failed to parse FIRE milestone: {e}")
-
         return FIREPlan(
-            current_corpus=parsed.get("current_corpus", existing_corpus),
-            target_corpus=parsed.get("target_corpus", 0),
-            years_to_retirement=parsed.get(
-                "years_to_retirement",
-                profile.target_retirement_age - profile.age,
-            ),
-            expected_retirement_date=parsed.get("expected_retirement_date", ""),
-            monthly_sip_required=parsed.get("monthly_sip_required", 0),
+            current_corpus=round(existing_corpus, 2),
+            target_corpus=round(target_corpus, 2),
+            years_to_retirement=years_to_retirement,
+            expected_retirement_date=expected_retirement_date,
+            monthly_sip_required=round(monthly_sip_required, 2),
             milestones=milestones,
-            insurance_gap=parsed.get("insurance_gap"),
-            assumptions=parsed.get("assumptions", {
+            insurance_gap=insurance_gap,
+            assumptions={
                 "inflation_rate": config.ASSUMED_INFLATION_RATE,
                 "equity_return": config.ASSUMED_EQUITY_RETURN,
                 "debt_return": config.ASSUMED_DEBT_RETURN,
                 "gold_return": config.ASSUMED_GOLD_RETURN,
                 "swr": config.SAFE_WITHDRAWAL_RATE,
-            }),
-            at_current_trajectory=parsed.get("at_current_trajectory"),
+                "projected_corpus_at_retirement": round(projected_corpus, 2),
+            },
+            at_current_trajectory=at_current_trajectory,
         )
+
+    @staticmethod
+    def _get_fire_allocation(risk_profile: RiskProfile, year_index: int, years_to_retirement: int) -> tuple[float, float, float]:
+        base_allocations = {
+            RiskProfile.CONSERVATIVE: (45.0, 45.0, 10.0, 30.0),
+            RiskProfile.MODERATE: (65.0, 25.0, 10.0, 35.0),
+            RiskProfile.AGGRESSIVE: (80.0, 15.0, 5.0, 40.0),
+        }
+        base_equity, _, gold_pct, floor_equity = base_allocations.get(
+            risk_profile,
+            base_allocations[RiskProfile.MODERATE],
+        )
+        if years_to_retirement <= 1:
+            equity_pct = floor_equity if years_to_retirement == 0 else base_equity
+        else:
+            reduction_span = years_to_retirement - 1
+            reduction = ((base_equity - floor_equity) * min(year_index, reduction_span)) / reduction_span
+            equity_pct = base_equity - reduction
+
+        equity_pct = max(floor_equity, equity_pct)
+        debt_pct = max(0.0, 100.0 - equity_pct - gold_pct)
+        return round(equity_pct, 1), round(debt_pct, 1), round(gold_pct, 1)
+
+    @staticmethod
+    def _blended_annual_return(equity_pct: float, debt_pct: float, gold_pct: float) -> float:
+        return (
+            (equity_pct / 100.0) * config.ASSUMED_EQUITY_RETURN
+            + (debt_pct / 100.0) * config.ASSUMED_DEBT_RETURN
+            + (gold_pct / 100.0) * config.ASSUMED_GOLD_RETURN
+        )
+
+    @staticmethod
+    def _format_year_month_offset(months_ahead: int) -> str:
+        now = datetime.now()
+        total_month = (now.month - 1) + months_ahead
+        year = now.year + (total_month // 12)
+        month = (total_month % 12) + 1
+        return f"{year:04d}-{month:02d}"
+
+    def _simulate_fire_path(
+        self,
+        profile: UserFinancialProfile,
+        monthly_sip: float,
+        years_to_retirement: int,
+    ) -> tuple[List[FIREMilestone], float]:
+        current_corpus = float(sum(profile.existing_investments.values()))
+        if years_to_retirement <= 0:
+            equity_pct, debt_pct, gold_pct = self._get_fire_allocation(profile.risk_profile, 0, 0)
+            milestone = FIREMilestone(
+                month=datetime.now().month,
+                year=datetime.now().year,
+                equity_sip=round(monthly_sip * equity_pct / 100.0, 2),
+                debt_sip=round(monthly_sip * debt_pct / 100.0, 2),
+                gold_sip=round(monthly_sip * gold_pct / 100.0, 2),
+                total_sip=round(monthly_sip, 2),
+                projected_corpus=round(current_corpus, 2),
+                equity_pct=equity_pct,
+                debt_pct=debt_pct,
+                gold_pct=gold_pct,
+                notes="Target retirement age is already reached. Review your withdrawal readiness.",
+            )
+            return [milestone], current_corpus
+
+        milestones: List[FIREMilestone] = []
+        corpus = current_corpus
+        total_months = years_to_retirement * 12
+
+        for month_offset in range(1, total_months + 1):
+            year_index = (month_offset - 1) // 12
+            equity_pct, debt_pct, gold_pct = self._get_fire_allocation(
+                profile.risk_profile,
+                year_index,
+                years_to_retirement,
+            )
+            annual_return = self._blended_annual_return(equity_pct, debt_pct, gold_pct)
+            monthly_return = (1 + annual_return) ** (1 / 12) - 1
+            corpus = corpus * (1 + monthly_return) + monthly_sip
+
+            if month_offset % 12 == 0 or month_offset == total_months:
+                milestone_date = self._format_year_month_offset(month_offset)
+                milestone_year, milestone_month = milestone_date.split("-")
+                notes = self._build_fire_milestone_note(
+                    year_index=year_index,
+                    years_to_retirement=years_to_retirement,
+                    equity_pct=equity_pct,
+                    debt_pct=debt_pct,
+                    monthly_sip=monthly_sip,
+                )
+                milestones.append(
+                    FIREMilestone(
+                        month=int(milestone_month),
+                        year=int(milestone_year),
+                        equity_sip=round(monthly_sip * equity_pct / 100.0, 2),
+                        debt_sip=round(monthly_sip * debt_pct / 100.0, 2),
+                        gold_sip=round(monthly_sip * gold_pct / 100.0, 2),
+                        total_sip=round(monthly_sip, 2),
+                        projected_corpus=round(corpus, 2),
+                        equity_pct=equity_pct,
+                        debt_pct=debt_pct,
+                        gold_pct=gold_pct,
+                        notes=notes,
+                    )
+                )
+
+        return milestones, corpus
+
+    @staticmethod
+    def _build_fire_milestone_note(
+        year_index: int,
+        years_to_retirement: int,
+        equity_pct: float,
+        debt_pct: float,
+        monthly_sip: float,
+    ) -> str:
+        if year_index == 0:
+            return f"Start with a monthly SIP of about ₹{monthly_sip:,.0f} while keeping equity at {equity_pct:.0f}%."
+        if year_index >= years_to_retirement - 1:
+            return f"Approach retirement with a more defensive mix: {equity_pct:.0f}% equity and {debt_pct:.0f}% debt."
+        return f"Gradually de-risk the portfolio by shifting toward debt as retirement approaches."
+
+    def _solve_required_monthly_sip(
+        self,
+        profile: UserFinancialProfile,
+        target_corpus: float,
+        years_to_retirement: int,
+    ) -> float:
+        current_corpus = float(sum(profile.existing_investments.values()))
+        if target_corpus <= current_corpus or years_to_retirement <= 0:
+            return max(target_corpus - current_corpus, 0.0)
+
+        _, corpus_without_sip = self._simulate_fire_path(profile, 0.0, years_to_retirement)
+        if corpus_without_sip >= target_corpus:
+            return 0.0
+
+        lower = 0.0
+        upper = max(profile.annual_income / 12, 1000.0)
+
+        while upper < target_corpus:
+            _, projected = self._simulate_fire_path(profile, upper, years_to_retirement)
+            if projected >= target_corpus:
+                break
+            upper *= 2
+            if upper > 1e8:
+                break
+
+        for _ in range(50):
+            mid = (lower + upper) / 2
+            _, projected = self._simulate_fire_path(profile, mid, years_to_retirement)
+            if projected >= target_corpus:
+                upper = mid
+            else:
+                lower = mid
+
+        return upper
+
+    def _estimate_fire_trajectory(
+        self,
+        profile: UserFinancialProfile,
+        target_corpus: float,
+        current_sip: float,
+        target_years_to_retirement: int,
+    ) -> str:
+        current_corpus = float(sum(profile.existing_investments.values()))
+        if current_corpus >= target_corpus:
+            return "Your current corpus already meets the FIRE target."
+
+        if current_sip <= 0:
+            return (
+                "At the current savings rate, the target corpus is unlikely to be reached. "
+                "A positive monthly surplus is needed to move the FIRE date forward."
+            )
+
+        max_years = max(config.LIFE_EXPECTANCY - profile.age, target_years_to_retirement)
+        corpus = current_corpus
+        total_months = max_years * 12
+
+        for month_offset in range(1, total_months + 1):
+            year_index = (month_offset - 1) // 12
+            equity_pct, debt_pct, gold_pct = self._get_fire_allocation(
+                profile.risk_profile,
+                year_index,
+                max(max_years, 1),
+            )
+            annual_return = self._blended_annual_return(equity_pct, debt_pct, gold_pct)
+            monthly_return = (1 + annual_return) ** (1 / 12) - 1
+            corpus = corpus * (1 + monthly_return) + current_sip
+            if corpus >= target_corpus:
+                target_date = self._format_year_month_offset(month_offset)
+                achieved_age = profile.age + (month_offset / 12.0)
+                delta_years = (month_offset / 12.0) - target_years_to_retirement
+                if abs(delta_years) < 0.5:
+                    timing_text = "around your target retirement age"
+                elif delta_years < 0:
+                    timing_text = f"about {abs(delta_years):.1f} years earlier than your target"
+                else:
+                    timing_text = f"about {delta_years:.1f} years later than your target"
+                return (
+                    f"At the current savings rate of ₹{current_sip:,.0f}/month, "
+                    f"the target corpus is projected around {target_date} at age {achieved_age:.1f}, "
+                    f"{timing_text}."
+                )
+
+        return (
+            f"At the current savings rate of ₹{current_sip:,.0f}/month, "
+            f"the target corpus is unlikely to be reached before age {config.LIFE_EXPECTANCY}."
+        )
+
+    @staticmethod
+    def _estimate_insurance_gap(profile: UserFinancialProfile, existing_corpus: float) -> Dict[str, Any]:
+        life_cover_gap = max(profile.annual_income * 10 - existing_corpus, 0.0)
+        health_cover_recommendation = "Maintain at least a ₹10L family floater health policy."
+        return {
+            "total_gap": round(life_cover_gap, 2),
+            "life_cover_gap": round(life_cover_gap, 2),
+            "health_cover_recommendation": health_cover_recommendation,
+            "summary": (
+                f"Estimated life cover gap: ₹{life_cover_gap:,.0f}. "
+                f"{health_cover_recommendation}"
+            ),
+        }
 
     @staticmethod
     def _coerce_fire_milestone(milestone: dict) -> FIREMilestone:
@@ -791,8 +1250,12 @@ Return a JSON array of exactly 6 objects:
 
 Return ONLY the JSON array."""
 
-        response = self._call_llm(prompt)
-        parsed = self._parse_json_response(response)
+        try:
+            response = self._call_llm(prompt)
+            parsed = self._parse_json_response(response)
+        except Exception as exc:
+            logger.warning("Falling back to deterministic health score: %s", exc)
+            return self._generate_deterministic_health_score(analytics, profile)
 
         if not isinstance(parsed, list):
             parsed = [parsed]
@@ -808,6 +1271,9 @@ Return ONLY the JSON array."""
                 ))
             except Exception as e:
                 logger.warning(f"Failed to parse health score dimension: {e}")
+
+        if len(dimensions) != 6:
+            return self._generate_deterministic_health_score(analytics, profile)
 
         return dimensions
 

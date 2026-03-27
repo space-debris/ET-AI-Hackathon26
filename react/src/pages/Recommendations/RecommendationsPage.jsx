@@ -14,7 +14,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Spinner } from '../../components/ui/Spinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
-import { portfolioApi, runtimeConfig } from '../../services/api';
+import { portfolioApi, runtimeConfig, userApi } from '../../services/api';
 import { getActionColor } from '../../utils/helpers';
 import { clsx } from 'clsx';
 
@@ -47,6 +47,15 @@ export function RecommendationsPage() {
   useEffect(() => {
     async function fetchData() {
       try {
+        try {
+          await userApi.getProfile();
+        } catch {
+          const cachedProfile = userApi.getCachedProfile();
+          if (cachedProfile) {
+            await userApi.updateProfile(cachedProfile);
+          }
+        }
+
         const data = await portfolioApi.getRebalancingPlan();
         setRecommendations(data);
       } catch (fetchError) {

@@ -12,6 +12,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const DEMO_MODE_ENABLED =
   String(import.meta.env.VITE_ENABLE_DEMO_MODE || '').toLowerCase() === 'true';
 const SESSION_STORAGE_KEY = 'finsage-session-id-v2';
+const PROFILE_STORAGE_KEY = 'finsage-user-profile-cache-v1';
 
 const getStoredSessionId = () => {
   if (typeof window === 'undefined') {
@@ -25,6 +26,43 @@ const setStoredSessionId = (sessionId) => {
     return;
   }
   window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+};
+
+const setStoredProfile = (profile) => {
+  if (!profile || typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(
+    PROFILE_STORAGE_KEY,
+    JSON.stringify({
+      sessionId: getStoredSessionId(),
+      profile,
+    })
+  );
+};
+
+const getStoredProfile = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const cached = JSON.parse(raw);
+    const currentSessionId = getStoredSessionId();
+    if (cached?.sessionId && currentSessionId && cached.sessionId !== currentSessionId) {
+      return null;
+    }
+
+    return cached?.profile ?? null;
+  } catch {
+    return null;
+  }
 };
 
 // Create axios instance with default config
@@ -475,6 +513,9 @@ export const portfolioApi = {
       if (error?.response?.status === 404) {
         throw new Error('Upload and analyse your statement first to see rebalancing suggestions, tax context, and next steps.');
       }
+      if (error?.response?.status === 409) {
+        throw new Error('Upload your statement and save a profile on the FIRE or Tax page first to unlock rebalancing recommendations.');
+      }
       throw withApiErrorContext('Rebalancing recommendations unavailable.', error);
     }
   },
@@ -498,8 +539,9 @@ export const fireApi = {
 
     try {
       const response = await api.post('/fire/generate', toBackendProfile(profile), {
-        timeout: 90000,
+        timeout: 20000,
       });
+      setStoredProfile(profile);
       return normalizeFirePlan(response.data);
     } catch (error) {
       throw withApiErrorContext('FIRE plan generation failed.', error);
@@ -526,8 +568,9 @@ export const fireApi = {
 
     try {
       const response = await api.put('/fire/update', toBackendProfile(updatedProfile), {
-        timeout: 90000,
+        timeout: 20000,
       });
+      setStoredProfile(updatedProfile);
       return normalizeFirePlan(response.data);
     } catch (error) {
       throw withApiErrorContext('FIRE plan update failed.', error);
@@ -545,6 +588,7 @@ export const taxApi = {
 
     try {
       const response = await api.post('/tax/compare', toBackendProfile(profile));
+      setStoredProfile(profile);
       return normalizeTaxComparison(response.data);
     } catch (error) {
       throw withApiErrorContext('Tax comparison failed.', error);
@@ -586,6 +630,9 @@ export const healthApi = {
       if (error?.response?.status === 404) {
         throw new Error('Upload and analyse a statement first to generate your score, risk signals, and focus areas.');
       }
+      if (error?.response?.status === 409) {
+        throw new Error('Upload your statement and save a profile on the FIRE or Tax page first to generate a health score.');
+      }
       throw withApiErrorContext('Health score unavailable.', error);
     }
   },
@@ -601,7 +648,9 @@ export const userApi = {
 
     try {
       const response = await api.get('/user/profile');
-      return toFrontendProfile(response.data?.profile ?? response.data);
+      const profile = toFrontendProfile(response.data?.profile ?? response.data);
+      setStoredProfile(profile);
+      return profile;
     } catch (error) {
       throw withApiErrorContext('User profile unavailable.', error);
     }
@@ -615,10 +664,19 @@ export const userApi = {
 
     try {
       const response = await api.put('/user/profile', toBackendProfile(profile));
+      setStoredProfile(profile);
       return response.data;
     } catch (error) {
       throw withApiErrorContext('User profile update failed.', error);
     }
+  },
+
+  getCachedProfile() {
+    return getStoredProfile();
+  },
+
+  rememberProfile(profile) {
+    setStoredProfile(profile);
   },
 };
 

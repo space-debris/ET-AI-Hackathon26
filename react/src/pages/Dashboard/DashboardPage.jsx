@@ -23,7 +23,13 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { AllocationPieChart } from '../../components/charts/AllocationChart';
 import { portfolioApi, healthApi, runtimeConfig } from '../../services/api';
-import { formatCurrency, formatPercentage, calculateReturns, getScoreColor } from '../../utils/helpers';
+import {
+  formatCurrency,
+  formatPercentage,
+  calculateReturns,
+  getCategoryLabel,
+  getScoreColor,
+} from '../../utils/helpers';
 import { clsx } from 'clsx';
 
 const container = {
@@ -134,6 +140,39 @@ export function DashboardPage() {
 
   const healthDimensions = healthScore?.dimensions ?? [];
   const showRuntimeNotice = runtimeConfig.demoModeEnabled || showNotice;
+  const overlapSignalCount = portfolio ? Object.keys(portfolio.overlapMatrix ?? {}).length : 0;
+  const regularPlanCount = portfolio
+    ? portfolio.holdings.filter((holding) => holding.planType !== 'direct').length
+    : 0;
+  const directPlanCount = portfolio
+    ? portfolio.holdings.filter((holding) => holding.planType === 'direct').length
+    : 0;
+  const strongestHealthDimension = healthDimensions.length
+    ? [...healthDimensions].sort((left, right) => right.score - left.score)[0]
+    : null;
+  const topHolding = portfolio
+    ? [...portfolio.holdings].sort((left, right) => right.currentValue - left.currentValue)[0] ?? null
+    : null;
+  const largestCategory = portfolio
+    ? Object.entries(portfolio.categoryAllocation ?? {}).sort((left, right) => right[1] - left[1])[0] ?? null
+    : null;
+  const leadCategory = portfolio
+    ? Object.entries(portfolio.categoryAllocation ?? {})
+        .filter(([category]) => category !== 'other')
+        .sort((left, right) => right[1] - left[1])[0] ?? largestCategory
+    : null;
+  const portfolioGain = portfolio
+    ? portfolio.totalCurrentValue - portfolio.totalInvested
+    : 0;
+  const portfolioGainRate =
+    portfolio && portfolio.totalInvested > 0
+      ? portfolioGain / portfolio.totalInvested
+      : 0;
+  const leadCategoryLabel = leadCategory
+    ? leadCategory[0] === 'other'
+      ? 'Diversified / Other'
+      : getCategoryLabel(leadCategory[0])
+    : 'Category mix unavailable';
 
   const smartInsights = portfolio
     ? [
@@ -158,6 +197,28 @@ export function DashboardPage() {
           body: healthDimensions.length
             ? `${healthDimensions[0].dimension} is scoring ${healthDimensions[0].score}/100 in the current analysis.`
             : 'No health-score payload is available yet.',
+          tone: 'emerald',
+        },
+      ]
+    : [];
+
+  const smartInsightStats = portfolio
+    ? [
+        {
+          label: 'Funds tracked',
+          value: String(portfolio.holdings.length),
+          tone: 'blue',
+        },
+        {
+          label: 'Overlap signals',
+          value: String(overlapSignalCount),
+          tone: 'amber',
+        },
+        {
+          label: strongestHealthDimension ? 'Best score' : 'Regular plans',
+          value: strongestHealthDimension
+            ? `${strongestHealthDimension.score}/100`
+            : String(regularPlanCount),
           tone: 'emerald',
         },
       ]
@@ -298,7 +359,7 @@ export function DashboardPage() {
               />
             </div>
 
-            <div className="space-y-6">
+            <div>
               <Card variant="gradient">
                 <CardHeader>
                   <div className="flex items-center gap-2">
@@ -389,30 +450,52 @@ export function DashboardPage() {
                   )}
                 </CardContent>
               </Card>
+            </div>
+          </motion.div>
 
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-amber-500" />
-                    <CardTitle>Smart Insights</CardTitle>
+          <motion.div variants={item}>
+            <Card className="overflow-hidden border-gray-100 bg-gradient-to-r from-white via-slate-50 to-blue-50/40">
+              <CardHeader>
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-5 w-5 text-amber-500" />
+                      <CardTitle>Smart Insights</CardTitle>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-500">
+                      One quick read of your portfolio mix, momentum, costs, and next actions.
+                    </p>
                   </div>
-                </CardHeader>
-                <CardContent>
+                  <div
+                    className={clsx(
+                      'inline-flex items-center rounded-full px-3 py-1.5 text-sm font-semibold',
+                      portfolioGain >= 0
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-red-50 text-red-700'
+                    )}
+                  >
+                    {portfolioGain >= 0 ? '+' : '-'}
+                    {formatCurrency(Math.abs(portfolioGain))} net gain
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid gap-3 lg:grid-cols-[1.25fr_0.95fr]">
                   <div className="space-y-3">
                     {smartInsights.map((insight, idx) => (
                       <motion.div
                         key={idx}
                         whileHover={{ x: 4 }}
                         className={clsx(
-                          'flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer',
-                          insight.tone === 'amber' && 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-100/50',
-                          insight.tone === 'blue' && 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100/50',
-                          insight.tone === 'emerald' && 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-100/50'
+                          'flex items-start gap-3 rounded-xl border p-4',
+                          insight.tone === 'amber' && 'border-amber-100/70 bg-gradient-to-r from-amber-50 to-orange-50',
+                          insight.tone === 'blue' && 'border-blue-100/70 bg-gradient-to-r from-blue-50 to-indigo-50',
+                          insight.tone === 'emerald' && 'border-emerald-100/70 bg-gradient-to-r from-emerald-50 to-teal-50'
                         )}
                       >
                         <div
                           className={clsx(
-                            'w-2 h-2 mt-2 rounded-full flex-shrink-0',
+                            'mt-2 h-2 w-2 rounded-full flex-shrink-0',
                             insight.tone === 'amber' && 'bg-amber-500',
                             insight.tone === 'blue' && 'bg-blue-500',
                             insight.tone === 'emerald' && 'bg-emerald-500'
@@ -420,14 +503,123 @@ export function DashboardPage() {
                         />
                         <div>
                           <p className="text-sm font-semibold text-gray-900">{insight.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{insight.body}</p>
+                          <p className="mt-0.5 text-sm text-gray-500">{insight.body}</p>
                         </div>
                       </motion.div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-blue-100 bg-white/90 p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-gray-400">
+                        <Wallet className="h-4 w-4 text-blue-500" />
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                          Top Fund
+                        </span>
+                      </div>
+                      <p className="mt-3 line-clamp-2 text-base font-semibold leading-7 text-gray-900">
+                        {topHolding ? topHolding.fundName : 'Not available'}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {topHolding
+                          ? `${formatCurrency(topHolding.currentValue)} currently allocated here`
+                          : 'Upload a statement to populate fund-level insights.'}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-amber-100 bg-white/90 p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-gray-400">
+                        <Target className="h-4 w-4 text-amber-500" />
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                          Category Tilt
+                        </span>
+                      </div>
+                      <p className="mt-3 text-base font-semibold text-gray-900">
+                        {leadCategoryLabel}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {leadCategory
+                          ? `${leadCategory[1].toFixed(1)}% of the portfolio is concentrated here.`
+                          : 'Category allocation will appear after analytics loads.'}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-emerald-100 bg-white/90 p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-gray-400">
+                        <TrendingUp className="h-4 w-4 text-emerald-500" />
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                          Momentum
+                        </span>
+                      </div>
+                      <p className="mt-3 text-base font-semibold text-gray-900">
+                        {formatPercentage(portfolio.overallXirr)} XIRR
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {portfolioGain >= 0 ? '+' : ''}
+                        {formatPercentage(portfolioGainRate)} since invested capital started compounding.
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-purple-100 bg-white/90 p-4 shadow-sm">
+                      <div className="flex items-center gap-2 text-gray-400">
+                        <PieChart className="h-4 w-4 text-purple-500" />
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                          Plan Mix
+                        </span>
+                      </div>
+                      <p className="mt-3 text-base font-semibold text-gray-900">
+                        {directPlanCount} direct / {regularPlanCount} regular
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        {regularPlanCount > 0
+                          ? `${formatCurrency(portfolio.expenseRatioDragInr)} annual drag is still worth reviewing.`
+                          : 'No regular-plan drag is showing up in this snapshot.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-gray-100 bg-white/70 p-4">
+                  <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+                    <div className="grid grid-cols-3 gap-3">
+                      {smartInsightStats.map((stat) => (
+                        <div
+                          key={stat.label}
+                          className={clsx(
+                            'rounded-xl border px-3 py-3',
+                            stat.tone === 'amber' && 'border-amber-100 bg-amber-50/70',
+                            stat.tone === 'blue' && 'border-blue-100 bg-blue-50/70',
+                            stat.tone === 'emerald' && 'border-emerald-100 bg-emerald-50/70'
+                          )}
+                        >
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
+                            {stat.label}
+                          </p>
+                          <p className="mt-2 text-lg font-bold text-gray-900">{stat.value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-3 md:min-w-[250px]">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">Action lane</p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {regularPlanCount > 0
+                            ? `${regularPlanCount} fund${regularPlanCount === 1 ? '' : 's'} still look like regular plans.`
+                            : 'Your current snapshot has no regular-plan signal to review.'}
+                        </p>
+                      </div>
+                      <Link to="/portfolio" className="shrink-0">
+                        <Button variant="ghost" size="sm">
+                          Open Portfolio
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </motion.div>
 
           <motion.div variants={item}>

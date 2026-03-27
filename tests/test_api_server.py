@@ -77,6 +77,43 @@ def test_tax_compare_endpoint_returns_validated_values():
         thread.join(timeout=5)
 
 
+def test_fire_generate_endpoint_returns_plan_payload():
+    server = FinSageHTTPServer(("127.0.0.1", 0))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        profile = {
+            "age": 34,
+            "annual_income": 2400000,
+            "monthly_expenses": 80000,
+            "existing_investments": {"MF": 1800000, "PPF": 600000},
+            "target_retirement_age": 50,
+            "target_monthly_corpus": 150000,
+            "risk_profile": "moderate",
+        }
+
+        status, payload, _, _ = _request(
+            server,
+            "POST",
+            "/api/fire/generate",
+            body=json.dumps(profile).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+
+        data = json.loads(payload.decode("utf-8"))
+        assert status == 200
+        assert data["fire_plan"]["years_to_retirement"] == 16
+        assert data["fire_plan"]["target_corpus"] > data["fire_plan"]["current_corpus"]
+        assert data["fire_plan"]["monthly_sip_required"] >= 0
+        assert len(data["fire_plan"]["milestones"]) == 16
+        assert data["fire_plan"]["at_current_trajectory"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def test_upload_and_cached_analytics_endpoints_share_session():
     server = FinSageHTTPServer(("127.0.0.1", 0))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -110,6 +147,36 @@ def test_upload_and_cached_analytics_endpoints_share_session():
         assert analytics_data["analytics"]["overall_xirr"] == 0.121
         assert analytics_data["analytics"]["expense_ratio_drag_inr"] == 5644.85
         assert len(analytics_data["analytics"]["holdings"]) == 6
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_upload_response_exposes_session_header_for_browser_clients():
+    server = FinSageHTTPServer(("127.0.0.1", 0))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        boundary, body = _build_multipart(Path("data/sample_cams_detailed.pdf"))
+        connection = http.client.HTTPConnection(server.server_address[0], server.server_address[1], timeout=30)
+        connection.request(
+            "POST",
+            "/api/portfolio/upload",
+            body=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+
+        response = connection.getresponse()
+        response.read()
+        expose_headers = response.getheader("Access-Control-Expose-Headers")
+        session_id = response.getheader("X-Session-Id")
+        connection.close()
+
+        assert response.status == 200
+        assert session_id
+        assert expose_headers == "X-Session-Id"
     finally:
         server.shutdown()
         server.server_close()

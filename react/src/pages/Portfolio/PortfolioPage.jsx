@@ -46,19 +46,27 @@ export function PortfolioPage() {
 
   useEffect(() => {
     async function fetchData() {
-      try {
-        const [data, report] = await Promise.all([
-          portfolioApi.getAnalytics(),
-          reportApi.getReport(),
-        ]);
-        setPortfolio(data);
-        setReportReady(Boolean(report));
-      } catch (error) {
-        console.error('Failed to fetch portfolio:', error);
-        setError(error.message);
-      } finally {
-        setLoading(false);
+      const [portfolioResult, reportResult] = await Promise.allSettled([
+        portfolioApi.getAnalytics(),
+        reportApi.getReport(),
+      ]);
+
+      if (portfolioResult.status === 'fulfilled') {
+        setPortfolio(portfolioResult.value);
+        setError(null);
+      } else {
+        console.error('Failed to fetch portfolio:', portfolioResult.reason);
+        setError(portfolioResult.reason?.message || 'Portfolio analytics unavailable.');
       }
+
+      if (reportResult.status === 'fulfilled') {
+        setReportReady(Boolean(reportResult.value));
+      } else {
+        console.error('Failed to fetch report metadata:', reportResult.reason);
+        setReportReady(false);
+      }
+
+      setLoading(false);
     }
     fetchData();
   }, []);

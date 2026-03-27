@@ -1,4 +1,5 @@
 import { useState, createContext, useContext } from 'react';
+import { motion } from 'framer-motion';
 import { clsx } from 'clsx';
 
 const TabsContext = createContext(null);
