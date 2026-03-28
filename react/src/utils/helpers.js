@@ -1,5 +1,54 @@
 // Utility functions for formatting
 
+const CATEGORY_COLORS = {
+  large_cap: '#2563eb',
+  mid_cap: '#7c3aed',
+  small_cap: '#ec4899',
+  flexi_cap: '#10b981',
+  multi_cap: '#14b8a6',
+  elss: '#f59e0b',
+  debt_short_duration: '#0ea5e9',
+  debt_medium_duration: '#06b6d4',
+  debt_long_duration: '#0891b2',
+  liquid: '#22c55e',
+  hybrid_aggressive: '#f97316',
+  hybrid_conservative: '#fb7185',
+  index_fund: '#6366f1',
+  sectoral: '#ef4444',
+  international: '#8b5cf6',
+  other: '#64748b',
+};
+
+const CATEGORY_LABELS = {
+  large_cap: 'Large Cap',
+  mid_cap: 'Mid Cap',
+  small_cap: 'Small Cap',
+  flexi_cap: 'Flexi Cap',
+  multi_cap: 'Multi Cap',
+  elss: 'ELSS',
+  debt_short_duration: 'Short Duration Debt',
+  debt_medium_duration: 'Medium Duration Debt',
+  debt_long_duration: 'Long Duration Debt',
+  liquid: 'Liquid',
+  hybrid_aggressive: 'Aggressive Hybrid',
+  hybrid_conservative: 'Conservative Hybrid',
+  index_fund: 'Index Fund',
+  sectoral: 'Sectoral',
+  international: 'International',
+  other: 'Other',
+};
+
+const FUND_PALETTE = [
+  '#2563eb',
+  '#7c3aed',
+  '#10b981',
+  '#f59e0b',
+  '#ec4899',
+  '#14b8a6',
+  '#ef4444',
+  '#6366f1',
+];
+
 export function formatCurrency(amount, currency = 'INR') {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
@@ -47,29 +96,22 @@ export function calculateAbsoluteReturns(invested, current) {
 }
 
 export function getCategoryColor(category) {
-  const colors = {
-    large_cap: '#3b82f6', // blue
-    mid_cap: '#8b5cf6', // purple
-    small_cap: '#ec4899', // pink
-    flexi_cap: '#10b981', // green
-    elss: '#f59e0b', // amber
-    debt: '#6366f1', // indigo
-    hybrid: '#14b8a6', // teal
-  };
-  return colors[category] || '#6b7280';
+  return CATEGORY_COLORS[category] || CATEGORY_COLORS.other;
 }
 
 export function getCategoryLabel(category) {
-  const labels = {
-    large_cap: 'Large Cap',
-    mid_cap: 'Mid Cap',
-    small_cap: 'Small Cap',
-    flexi_cap: 'Flexi Cap',
-    elss: 'ELSS',
-    debt: 'Debt',
-    hybrid: 'Hybrid',
-  };
-  return labels[category] || category;
+  return CATEGORY_LABELS[category] || category;
+}
+
+export function getFundColor(seed, fallbackCategory = 'other') {
+  if (!seed) {
+    return getCategoryColor(fallbackCategory);
+  }
+
+  const hash = String(seed)
+    .split('')
+    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return FUND_PALETTE[hash % FUND_PALETTE.length] || getCategoryColor(fallbackCategory);
 }
 
 export function getActionColor(action) {

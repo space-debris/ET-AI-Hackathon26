@@ -26,7 +26,30 @@ FUND_FACTSHEETS_DIR = str(DATA_DIR / "fund_factsheets")
 # LLM Configuration
 # =============================================================================
 
+def _parse_api_keys(raw_value: str) -> list[str]:
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY_SECONDARY = os.getenv("GEMINI_API_KEY_SECONDARY", os.getenv("GEMINI_API_KEY_2", ""))
+GEMINI_API_KEYS = _dedupe_preserve_order(
+    [
+        *([GEMINI_API_KEY] if GEMINI_API_KEY else []),
+        *([GEMINI_API_KEY_SECONDARY] if GEMINI_API_KEY_SECONDARY else []),
+        *_parse_api_keys(os.getenv("GEMINI_API_KEYS", "")),
+    ]
+)
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.3"))
 GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "8192"))

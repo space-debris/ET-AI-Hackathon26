@@ -621,3 +621,36 @@ class TestJSONParsing:
         """Invalid JSON → ValueError."""
         with pytest.raises(ValueError, match="invalid JSON"):
             advisory_agent._parse_json_response("this is not json")
+
+
+class TestDualGeminiSupport:
+    """Test multi-key Gemini fallback without live API calls."""
+
+    def test_init_builds_clients_for_all_configured_keys(self):
+        with patch("agents.advisory_agent.config.GEMINI_API_KEYS", ["key-one", "key-two"]):
+            with patch("agents.advisory_agent.ChatGoogleGenerativeAI") as mock_chat:
+                from agents.advisory_agent import AdvisoryAgent
+
+                agent = AdvisoryAgent()
+
+        assert agent.llm_available is True
+        assert len(agent.llms) == 2
+        assert mock_chat.call_count == 2
+
+    def test_call_llm_falls_back_to_secondary_key(self, advisory_agent):
+        first_llm = MagicMock()
+        second_llm = MagicMock()
+        first_llm.invoke.side_effect = RuntimeError("primary exhausted")
+        second_llm.invoke.return_value = type("Response", (), {"content": '{"ok": true}'})()
+
+        advisory_agent.llm_available = True
+        advisory_agent.llms = [first_llm, second_llm]
+        advisory_agent.llm = first_llm
+        advisory_agent._llm_cursor = 0
+
+        response = advisory_agent._call_llm("Return JSON")
+
+        assert response == '{"ok": true}'
+        assert first_llm.invoke.call_count == 1
+        assert second_llm.invoke.call_count == 1
+        assert advisory_agent.llm is second_llm

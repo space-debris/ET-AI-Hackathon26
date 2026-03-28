@@ -91,6 +91,17 @@ def _sanitize(text: str) -> str:
     return text.encode("latin-1", errors="ignore").decode("latin-1")
 
 
+def _compute_overlap_score(analytics: PortfolioAnalytics) -> float:
+    if analytics.overlap_details:
+        return sum(detail.total_portfolio_exposure for detail in analytics.overlap_details) * 100
+    if analytics.overlap_matrix:
+        return sum(
+            sum(weight * 100 for weight in fund_weights.values())
+            for fund_weights in analytics.overlap_matrix.values()
+        ) / len(analytics.overlap_matrix)
+    return 0.0
+
+
 def generate_pdf(
     analytics: Optional[PortfolioAnalytics] = None,
     advisory_report: Optional[AdvisoryReport] = None,
@@ -144,13 +155,50 @@ def generate_pdf(
         for h in analytics.holdings:
             name = h.fund_name[:32] + "..." if len(h.fund_name) > 32 else h.fund_name
             cat = h.category.value.replace("_", " ").title()[:12]
-            xirr_str = f"{h.xirr * 100:.1f}%" if h.xirr else "-"
+            xirr_str = f"{h.xirr * 100:.1f}%" if h.xirr is not None else "-"
             pdf.cell(65, 5, name, border=1)
             pdf.cell(25, 5, cat, border=1)
             pdf.cell(30, 5, _fmt_inr(h.current_value), border=1, align="R")
             pdf.cell(30, 5, _fmt_inr(h.invested_amount), border=1, align="R")
             pdf.cell(22, 5, xirr_str, border=1, align="R")
             pdf.cell(18, 5, f"{h.expense_ratio * 100:.2f}%", border=1, align="R", new_x="LMARGIN", new_y="NEXT")
+
+        pdf.ln(4)
+        pdf.section_title("Overlap Snapshot")
+        overlap_score = _compute_overlap_score(analytics)
+        pdf.key_value("Overlap Score:", f"{overlap_score:.1f}%")
+        pdf.key_value("Repeated Stocks:", str(len(analytics.overlap_matrix)))
+        if analytics.overlap_details:
+            strongest_signal = analytics.overlap_details[0]
+            pdf.key_value("Strongest Signal:", strongest_signal.stock_name)
+            pdf.body_text(
+                f"{strongest_signal.stock_name} appears across "
+                f"{len(strongest_signal.funds)} funds with "
+                f"{strongest_signal.total_portfolio_exposure * 100:.1f}% weighted exposure."
+            )
+
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_fill_color(245, 245, 250)
+            pdf.cell(72, 6, "Stock", border=1, fill=True)
+            pdf.cell(45, 6, "Funds", border=1, fill=True, align="R")
+            pdf.cell(45, 6, "Portfolio Exposure", border=1, fill=True, align="R", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "", 8)
+
+            for detail in analytics.overlap_details[:5]:
+                stock_name = detail.stock_name[:34] + "..." if len(detail.stock_name) > 34 else detail.stock_name
+                pdf.cell(72, 5, _sanitize(stock_name), border=1)
+                pdf.cell(45, 5, str(len(detail.funds)), border=1, align="R")
+                pdf.cell(
+                    45,
+                    5,
+                    f"{detail.total_portfolio_exposure * 100:.1f}%",
+                    border=1,
+                    align="R",
+                    new_x="LMARGIN",
+                    new_y="NEXT",
+                )
+        else:
+            pdf.body_text("No overlapping stock positions were detected in the current analytics payload.")
 
     # ── Rebalancing Plan ──────────────────────────────────────────────
     report = final_report or advisory_report

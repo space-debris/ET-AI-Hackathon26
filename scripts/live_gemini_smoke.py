@@ -164,8 +164,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not config.GEMINI_API_KEY:
-        print("GEMINI_API_KEY is not configured in the environment.", file=sys.stderr)
+    if not config.GEMINI_API_KEYS:
+        print(
+            "No Gemini API key is configured in the environment. "
+            "Set GEMINI_API_KEY and optionally GEMINI_API_KEY_2, "
+            "GEMINI_API_KEY_SECONDARY, or GEMINI_API_KEYS.",
+            file=sys.stderr,
+        )
         return 2
 
     pdf_path = Path(args.pdf)

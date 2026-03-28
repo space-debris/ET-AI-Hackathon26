@@ -251,7 +251,10 @@ export function PortfolioPage() {
 
           {/* Overlap Tab */}
           <TabsContent value="overlap">
-            <OverlapHeatmap overlapMatrix={portfolio.overlapMatrix} />
+            <OverlapHeatmap
+              overlapMatrix={portfolio.overlapMatrix}
+              overlapDetails={portfolio.overlapDetails}
+            />
           </TabsContent>
 
           {/* Holdings Tab */}

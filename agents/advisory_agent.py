@@ -18,6 +18,7 @@ Dependencies: langchain-google-genai, shared/schemas.py, shared/config.py, promp
 
 import json
 import logging
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -61,15 +62,14 @@ class AdvisoryAgent:
 
     def __init__(self, model_name: str = None):
         self.model_name = model_name or config.GEMINI_MODEL
-        self.llm_available = bool(config.GEMINI_API_KEY)
+        self.api_keys = list(config.GEMINI_API_KEYS)
+        self.llm_available = bool(self.api_keys)
+        self.llms: List[ChatGoogleGenerativeAI] = []
+        self._llm_cursor = 0
         self.llm = None
         if self.llm_available:
-            self.llm = ChatGoogleGenerativeAI(
-                model=self.model_name,
-                google_api_key=config.GEMINI_API_KEY,
-                temperature=config.GEMINI_TEMPERATURE,
-                max_output_tokens=config.GEMINI_MAX_OUTPUT_TOKENS,
-            )
+            self.llms = [self._build_llm(api_key) for api_key in self.api_keys]
+            self.llm = self.llms[0]
         # Load prompt templates
         self.system_prompt = self._load_prompt("advisory_system.txt")
         self.fire_prompt_template = self._load_prompt("fire_planner.txt")
@@ -78,6 +78,14 @@ class AdvisoryAgent:
     # =========================================================================
     # Prompt Loading
     # =========================================================================
+
+    def _build_llm(self, api_key: str) -> ChatGoogleGenerativeAI:
+        return ChatGoogleGenerativeAI(
+            model=self.model_name,
+            google_api_key=api_key,
+            temperature=config.GEMINI_TEMPERATURE,
+            max_output_tokens=config.GEMINI_MAX_OUTPUT_TOKENS,
+        )
 
     @staticmethod
     def _load_prompt(filename: str) -> str:
@@ -91,6 +99,17 @@ class AdvisoryAgent:
     # LLM Call Helper
     # =========================================================================
 
+    def _ordered_llm_candidates(self) -> List[tuple[int, ChatGoogleGenerativeAI]]:
+        if not getattr(self, "llms", None):
+            return []
+
+        llm_count = len(self.llms)
+        start_index = self._llm_cursor % llm_count
+        return [
+            ((start_index + offset) % llm_count, self.llms[(start_index + offset) % llm_count])
+            for offset in range(llm_count)
+        ]
+
     def _call_llm(self, user_prompt: str, system_prompt: str = None) -> str:
         """
         Make a single LLM call with retry logic.
@@ -102,8 +121,12 @@ class AdvisoryAgent:
         Returns:
             Raw LLM response text
         """
-        if not self.llm_available or self.llm is None:
-            raise RuntimeError("GEMINI_API_KEY is not configured for live advisory generation.")
+        if not self.llm_available or not getattr(self, "llms", None):
+            raise RuntimeError(
+                "No Gemini API key is configured for live advisory generation. "
+                "Set GEMINI_API_KEY and optionally GEMINI_API_KEY_2, "
+                "GEMINI_API_KEY_SECONDARY, or GEMINI_API_KEYS."
+            )
 
         sys_prompt = system_prompt or self.system_prompt
         messages = [
@@ -111,18 +134,28 @@ class AdvisoryAgent:
             HumanMessage(content=user_prompt),
         ]
 
+        last_error: Optional[Exception] = None
         for attempt in range(config.MAX_RETRIES):
-            try:
-                response = self.llm.invoke(messages)
-                return self._coerce_response_text(response.content)
-            except Exception as e:
-                logger.warning(f"LLM call attempt {attempt + 1} failed: {e}")
-                if attempt == config.MAX_RETRIES - 1:
-                    raise RuntimeError(
-                        f"LLM call failed after {config.MAX_RETRIES} attempts: {e}"
+            for key_index, llm in self._ordered_llm_candidates():
+                try:
+                    response = llm.invoke(messages)
+                    self.llm = llm
+                    self._llm_cursor = (key_index + 1) % len(self.llms)
+                    return self._coerce_response_text(response.content)
+                except Exception as e:
+                    last_error = e
+                    logger.warning(
+                        "LLM call attempt %s using Gemini key #%s failed: %s",
+                        attempt + 1,
+                        key_index + 1,
+                        e,
                     )
-                import time
+            if attempt < config.MAX_RETRIES - 1:
                 time.sleep(config.RETRY_DELAY_SECONDS * (attempt + 1))
+
+        raise RuntimeError(
+            f"LLM call failed after {config.MAX_RETRIES} attempts across {len(self.llms)} Gemini key(s): {last_error}"
+        )
 
     @staticmethod
     def _coerce_response_text(content: Any) -> str:

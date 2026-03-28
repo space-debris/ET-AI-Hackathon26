@@ -7,7 +7,7 @@ import {
   Legend,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
-import { formatCurrency, getCategoryColor, getCategoryLabel } from '../../utils/helpers';
+import { formatCurrency, getCategoryColor, getCategoryLabel, getFundColor } from '../../utils/helpers';
 
 export function AllocationPieChart({ holdings, title = 'Portfolio Allocation' }) {
   // Aggregate by category
@@ -84,11 +84,11 @@ export function AllocationPieChart({ holdings, title = 'Portfolio Allocation' })
 }
 
 export function FundAllocationPieChart({ holdings, title = 'Fund-wise Allocation' }) {
-  const data = holdings.map((holding) => ({
+  const data = holdings.map((holding, index) => ({
     name: holding.fundName.split(' ').slice(0, 3).join(' '),
     fullName: holding.fundName,
     value: holding.currentValue,
-    color: getCategoryColor(holding.category),
+    color: getFundColor(`${holding.fundName}-${index}`, holding.category),
   }));
 
   const total = data.reduce((sum, item) => sum + item.value, 0);

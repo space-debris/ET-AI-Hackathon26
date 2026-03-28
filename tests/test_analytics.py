@@ -112,3 +112,113 @@ class TestAnalyticsAgent:
         assert "Reliance Industries" in analytics.overlap_matrix
         assert "HDFC Bank" in analytics.overlap_matrix
         assert "Infosys" in analytics.overlap_matrix
+
+    def test_sample_fixture_enrichment_supports_master_style_fund_names(self):
+        transactions = [
+            Transaction(
+                fund_name="HDFC TOP 100 FUND",
+                date=date(2024, 1, 10),
+                amount=5000,
+                units=9.958,
+                nav=502.11,
+                transaction_type=TransactionType.SIP,
+                amc="HDFC Mutual Fund",
+            ),
+            Transaction(
+                fund_name="NIPPON INDIA LARGE CAP FUND",
+                date=date(2024, 1, 15),
+                amount=3000,
+                units=40.2,
+                nav=74.62,
+                transaction_type=TransactionType.SIP,
+                amc="Nippon India Mutual Fund",
+            ),
+            Transaction(
+                fund_name="AXIS BLUECHIP FUND",
+                date=date(2024, 1, 1),
+                amount=5000,
+                units=91.0,
+                nav=54.94,
+                transaction_type=TransactionType.SIP,
+                amc="Axis Mutual Fund",
+            ),
+            Transaction(
+                fund_name="MIRAE ASSET EMERGING BLUECHIP FUND",
+                date=date(2024, 1, 5),
+                amount=4000,
+                units=44.5,
+                nav=89.88,
+                transaction_type=TransactionType.SIP,
+                amc="Mirae Asset Mutual Fund",
+            ),
+            Transaction(
+                fund_name="HDFC MID-CAP OPPORTUNITIES FUND",
+                date=date(2024, 1, 10),
+                amount=3000,
+                units=24.6,
+                nav=121.95,
+                transaction_type=TransactionType.SIP,
+                amc="HDFC Mutual Fund",
+            ),
+            Transaction(
+                fund_name="KOTAK FLEXI CAP FUND",
+                date=date(2024, 1, 20),
+                amount=2000,
+                units=30.3,
+                nav=66.0,
+                transaction_type=TransactionType.SIP,
+                amc="Kotak Mahindra Mutual Fund",
+            ),
+        ]
+
+        analytics = AnalyticsAgent().calculate_portfolio(transactions, raw_text="master cas without signature")
+
+        assert len(analytics.holdings) == 6
+        assert analytics.overall_xirr == 0.121
+        assert analytics.expense_ratio_drag_inr == 5644.85
+        assert "Reliance Industries" in analytics.overlap_matrix
+
+    def test_sample_fixture_enrichment_supports_regular_growth_aliases(self):
+        transactions = [
+            Transaction(
+                fund_name="HDFC Top 100 Fund - Regular Growth",
+                date=date(2024, 1, 10),
+                amount=5000,
+                units=9.958,
+                nav=502.11,
+                transaction_type=TransactionType.SIP,
+                amc="HDFC Mutual Fund",
+            ),
+            Transaction(
+                fund_name="Nippon India Large Cap Fund - Regular Growth",
+                date=date(2024, 1, 15),
+                amount=3000,
+                units=40.2,
+                nav=74.62,
+                transaction_type=TransactionType.SIP,
+                amc="Nippon India Mutual Fund",
+            ),
+            Transaction(
+                fund_name="Axis Bluechip Fund - Regular Growth",
+                date=date(2024, 1, 1),
+                amount=5000,
+                units=91.0,
+                nav=54.94,
+                transaction_type=TransactionType.SIP,
+                amc="Axis Mutual Fund",
+            ),
+            Transaction(
+                fund_name="Mirae Asset Emerging Bluechip Fund - Direct Growth",
+                date=date(2024, 1, 5),
+                amount=4000,
+                units=44.5,
+                nav=89.88,
+                transaction_type=TransactionType.SIP,
+                amc="Mirae Asset Mutual Fund",
+            ),
+        ]
+
+        analytics = AnalyticsAgent().calculate_portfolio(transactions, raw_text="parser friendly sample")
+
+        assert len(analytics.holdings) == 4
+        assert analytics.overall_xirr == 0.121

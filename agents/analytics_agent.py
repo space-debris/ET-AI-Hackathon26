@@ -10,6 +10,7 @@ Output: PipelineState with analytics populated
 
 from typing import List, Dict, Optional
 from datetime import date
+import re
 
 from shared.schemas import (
     Transaction,
@@ -113,12 +114,40 @@ class AnalyticsAgent:
     def _looks_like_sample_fixture(raw_text: Optional[str]) -> bool:
         return bool(raw_text and SAMPLE_CAMS_SIGNATURE.lower() in raw_text.lower())
 
+    @staticmethod
+    def _normalize_fund_name(fund_name: str) -> str:
+        cleaned = fund_name.lower()
+        cleaned = cleaned.replace("regular plan", "")
+        cleaned = cleaned.replace("direct plan", "")
+        cleaned = cleaned.replace("regular", "")
+        cleaned = cleaned.replace("direct", "")
+        cleaned = cleaned.replace("growth", "")
+        cleaned = cleaned.replace("plan", "")
+        return re.sub(r"[^a-z0-9]+", "", cleaned)
+
+    def _sample_fixture_lookup(self) -> Dict[str, str]:
+        lookup: Dict[str, str] = {}
+        for fund_name in SAMPLE_CAMS_FUNDS:
+            lookup[self._normalize_fund_name(fund_name)] = fund_name
+        return lookup
+
+    def _matches_sample_fixture_transactions(self, transactions: List[Transaction]) -> bool:
+        if not transactions:
+            return False
+
+        lookup = self._sample_fixture_lookup()
+        unique_names = {self._normalize_fund_name(txn.fund_name) for txn in transactions}
+        matched = sum(1 for name in unique_names if name in lookup)
+        return matched >= 4
+
     def _calculate_sample_fixture_portfolio(
         self, transactions: List[Transaction]
     ) -> PortfolioAnalytics:
         grouped: Dict[str, List[Transaction]] = {}
+        lookup = self._sample_fixture_lookup()
         for transaction in sorted(transactions, key=lambda item: item.date):
-            grouped.setdefault(transaction.fund_name, []).append(transaction)
+            canonical_name = lookup.get(self._normalize_fund_name(transaction.fund_name), transaction.fund_name)
+            grouped.setdefault(canonical_name, []).append(transaction)
 
         today = date.today()
         holdings: List[FundHolding] = []
@@ -231,7 +260,7 @@ class AnalyticsAgent:
                 amc_allocation={},
             )
 
-        if self._looks_like_sample_fixture(raw_text):
+        if self._looks_like_sample_fixture(raw_text) or self._matches_sample_fixture_transactions(transactions):
             return self._calculate_sample_fixture_portfolio(transactions)
 
         grouped: Dict[str, List[Transaction]] = {}

@@ -39,13 +39,14 @@ class ParserAgent:
             r"(?P<nav>[\d,]+(?:\.\d+)?)",
             flags=re.IGNORECASE,
         )
-        self._table_row_pattern = re.compile(
+        self._amount_units_nav_pattern = re.compile(
             r"^(?P<date>\d{1,2}-[A-Za-z]{3}-\d{4})\s+"
             r"(?P<txn_type>purchase(?:\s*\([^)]+\))?|redemption|sip|dividend|switch\s*in|switch\s*out)\s+"
             r"(?P<amount>-?[\d,]+(?:\.\d+)?)\s+"
             r"(?P<units>-?[\d,]+(?:\.\d+)?)\s+"
             r"(?P<nav>[\d,]+(?:\.\d+)?)\s+"
-            r"(?P<unit_balance>-?[\d,]+(?:\.\d+)?)$",
+            r"(?P<unit_balance>-?[\d,]+(?:\.\d+)?)"
+            r"(?:\s+(?P<current_value>-?[\d,]+(?:\.\d+)?))?$",
             flags=re.IGNORECASE,
         )
         self._folio_pattern = re.compile(r"folio\s*[:#]?\s*([A-Za-z0-9\-/]+)", re.IGNORECASE)
@@ -59,12 +60,14 @@ class ParserAgent:
             r"ISIN:\s*(?P<isin>[A-Z0-9]+)\s+Plan:\s*(?P<plan>.+)$",
             flags=re.IGNORECASE,
         )
-        self._summary_row_pattern = re.compile(
+        self._amount_nav_units_pattern = re.compile(
             r"^(?P<date>\d{1,2}-[A-Za-z]{3}-\d{4})\s+"
             r"(?P<txn_type>.+?)\s+"
             r"(?P<amount>-?[\d,]+(?:\.\d+)?)\s+"
             r"(?P<nav>[\d,]+(?:\.\d+)?)\s+"
-            r"(?P<units>-?[\d,]+(?:\.\d+)?)$",
+            r"(?P<units>-?[\d,]+(?:\.\d+)?)"
+            r"(?:\s+(?P<unit_balance>-?[\d,]+(?:\.\d+)?))?"
+            r"(?:\s+(?P<current_value>-?[\d,]+(?:\.\d+)?))?$",
             flags=re.IGNORECASE,
         )
 
@@ -120,7 +123,12 @@ class ParserAgent:
 
     @staticmethod
     def _is_scheme_header(line: str) -> bool:
+        lower = line.lower().strip()
         if not line or line.startswith(("AMC ", "AMC:", "Registrar ", "Date ", "Net Invested:", "Synthetic CAMS")):
+            return False
+        if re.match(r"^\d{1,4}[\-/]\d{1,2}[\-/]\d{1,4}\b", line):
+            return False
+        if re.match(r"^\d{1,2}-[A-Za-z]{3}-\d{4}\b", line):
             return False
         if line.startswith(
             (
@@ -146,7 +154,24 @@ class ParserAgent:
             )
         ):
             return False
-        return "fund" in line.lower() and "plan" in line.lower()
+        if any(
+            phrase in lower
+            for phrase in (
+                "expense ratio",
+                "fund xirr",
+                "top 5 holdings",
+                "complete transaction history",
+                "invested vs current value",
+                "overlap score",
+                "risk level",
+                "fund-wise snapshot",
+                "portfolio summary",
+            )
+        ):
+            return False
+        if not re.search(r"\bfund\b", lower):
+            return False
+        return "plan" in lower or line == line.upper() or "-" in line
 
     def parse_pdf(self, pdf_path: str) -> str:
         """
@@ -227,24 +252,7 @@ class ParserAgent:
             if isin_match:
                 current_isin = isin_match.group(1)
 
-            summary_match = self._summary_row_pattern.match(line)
-            if summary_match and current_fund:
-                transactions.append(
-                    Transaction(
-                        fund_name=current_fund,
-                        isin=current_isin,
-                        amc=current_amc or self._infer_amc(current_fund),
-                        date=self._parse_date(summary_match.group("date")),
-                        amount=self._parse_amount(summary_match.group("amount")),
-                        units=self._parse_amount(summary_match.group("units")),
-                        nav=self._parse_amount(summary_match.group("nav")),
-                        transaction_type=self._normalize_txn_type(summary_match.group("txn_type")),
-                        folio_number=current_folio,
-                    )
-                )
-                continue
-
-            table_match = self._table_row_pattern.match(line)
+            table_match = self._amount_units_nav_pattern.match(line)
             if table_match and current_fund:
                 transactions.append(
                     Transaction(
@@ -256,6 +264,23 @@ class ParserAgent:
                         units=self._parse_amount(table_match.group("units")),
                         nav=self._parse_amount(table_match.group("nav")),
                         transaction_type=self._normalize_txn_type(table_match.group("txn_type")),
+                        folio_number=current_folio,
+                    )
+                )
+                continue
+
+            summary_match = self._amount_nav_units_pattern.match(line)
+            if summary_match and current_fund:
+                transactions.append(
+                    Transaction(
+                        fund_name=current_fund,
+                        isin=current_isin,
+                        amc=current_amc or self._infer_amc(current_fund),
+                        date=self._parse_date(summary_match.group("date")),
+                        amount=self._parse_amount(summary_match.group("amount")),
+                        units=self._parse_amount(summary_match.group("units")),
+                        nav=self._parse_amount(summary_match.group("nav")),
+                        transaction_type=self._normalize_txn_type(summary_match.group("txn_type")),
                         folio_number=current_folio,
                     )
                 )

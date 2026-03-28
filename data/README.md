@@ -9,3 +9,8 @@ This directory contains:
 Generate detailed sample:
 - `python data/generate_dummy_cams_statement.py`
 - Requires: `reportlab` (`pip install reportlab`)
+
+Recommended Track 9 demo inputs:
+- `sample_cams_detailed.pdf` — best default for a compact, parser-friendly walkthrough that still shows overlap, XIRR, expense drag, and six funds
+- `sample_cams_aggressive.pdf`, `sample_cams_moderate.pdf`, `sample_cams_conservative.pdf` — useful persona variants, but not ideal for overlap demos because they currently cover fewer funds
+- `master_cams_statement.pdf` — best "full" demo statement once available locally, because it exercises the same six-fund Scenario C analytics at larger scale
