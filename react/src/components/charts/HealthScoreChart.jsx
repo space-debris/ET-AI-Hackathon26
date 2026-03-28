@@ -9,8 +9,7 @@ import {
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
 import { Badge } from '../ui/Badge';
-import { getScoreColor, getScoreLabel } from '../../utils/helpers';
-import { clsx } from 'clsx';
+import { getScoreColor, getScoreLabel, humanizeLabel } from '../../utils/helpers';
 
 export function HealthScoreRadar({ dimensions, overallScore }) {
   const data = dimensions.map((d) => ({
@@ -26,6 +25,7 @@ export function HealthScoreRadar({ dimensions, overallScore }) {
       return (
         <div className="bg-white px-4 py-3 shadow-lg rounded-lg border border-gray-100 max-w-xs">
           <p className="font-semibold text-gray-900">{d.dimension}</p>
+          <p className="font-semibold text-gray-900">{humanizeLabel(d.dimension)}</p>
           <p className="text-2xl font-bold" style={{ color: getScoreColor(d.score) }}>
             {d.score}/100
           </p>
@@ -68,6 +68,7 @@ export function HealthScoreRadar({ dimensions, overallScore }) {
               <PolarGrid stroke="#e5e7eb" />
               <PolarAngleAxis
                 dataKey="dimension"
+                tickFormatter={(value) => humanizeLabel(value)}
                 tick={{ fontSize: 12, fill: '#6b7280' }}
               />
               <PolarRadiusAxis
@@ -103,7 +104,7 @@ export function HealthScoreDetails({ dimensions }) {
           {dimensions.map((dimension, idx) => (
             <div key={idx} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
               <div className="flex items-center justify-between mb-2">
-                <h4 className="font-semibold text-gray-900">{dimension.dimension}</h4>
+                <h4 className="font-semibold text-gray-900">{humanizeLabel(dimension.dimension)}</h4>
                 <div className="flex items-center gap-2">
                   <span
                     className="text-lg font-bold"

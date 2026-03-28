@@ -1,5 +1,4 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
-import { clsx } from 'clsx';
 
 export function OverlapHeatmap({
   overlapMatrix,
@@ -18,10 +17,6 @@ export function OverlapHeatmap({
     f.split(' ').slice(0, 2).join(' ')
   );
   const fullFundNames = Array.from(allFunds);
-  const duplicateTouches = stocks.reduce(
-    (sum, stock) => sum + Object.keys(overlapMatrix[stock] || {}).length,
-    0
-  );
   const weightedOverlapScore = overlapDetails.length
     ? overlapDetails.reduce(
         (sum, detail) => sum + ((detail.totalPortfolioExposure ?? detail.total_portfolio_exposure ?? 0) * 100),
@@ -40,19 +35,26 @@ export function OverlapHeatmap({
     : stocks[0]
       ? { stockName: stocks[0], funds: overlapMatrix[stocks[0]] }
       : null;
+  const overlapSeverity =
+    weightedOverlapScore >= 15 ? 'High' : weightedOverlapScore >= 8 ? 'Moderate' : 'Contained';
+  const overlapGuidance = stocks.length
+    ? weightedOverlapScore >= 15
+      ? 'Our AI system sees concentrated duplication. Avoid adding fresh SIPs to the same repeated names until you reduce overlap in the most similar funds.'
+      : weightedOverlapScore >= 8
+        ? 'Our AI system sees meaningful overlap. Prefer directing new money toward categories or funds that do not repeat the same large positions.'
+        : 'Our AI system sees some overlap, but it is still manageable. Monitor the repeated names before making aggressive rebalancing changes.'
+    : 'Our AI system does not see any repeated stock positions in the current portfolio snapshot.';
+  const overlapAction = topSignal
+    ? `Start with ${topSignal.stockName ?? topSignal.stock_name}: it is the clearest repeated signal across ${Object.keys(topSignal.funds || {}).length} funds.`
+    : 'No overlap action is needed right now.';
 
-  // Get intensity color based on weight
-  const getColor = (weight) => {
-    if (weight >= 0.07) return 'bg-red-500';
-    if (weight >= 0.05) return 'bg-orange-400';
-    if (weight >= 0.03) return 'bg-yellow-300';
-    if (weight > 0) return 'bg-green-200';
-    return 'bg-gray-100';
-  };
-
-  const getTextColor = (weight) => {
-    if (weight >= 0.05) return 'text-white';
-    return 'text-gray-700';
+  const getCellStyle = (weight) => {
+    if (weight >= 0.08) return { backgroundColor: '#b91c1c', color: '#fff' };
+    if (weight >= 0.06) return { backgroundColor: '#dc2626', color: '#fff' };
+    if (weight >= 0.045) return { backgroundColor: '#7c2d12', color: '#fff' };
+    if (weight >= 0.03) return { backgroundColor: '#6d28d9', color: '#fff' };
+    if (weight > 0) return { backgroundColor: '#ddd6fe', color: '#4c1d95' };
+    return { backgroundColor: '#f8fafc', color: '#94a3b8' };
   };
 
   return (
@@ -60,13 +62,14 @@ export function OverlapHeatmap({
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <CardDescription>
-          Stock overlap across your funds. Higher overlap (red) means less diversification.
+          Stock overlap across your funds. Darker cells mean stronger duplication and lower diversification.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {stocks.length ? (
-          <div className="mb-5 grid gap-3 md:grid-cols-3">
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4">
+          <div className="mb-6 space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-red-100 bg-red-50/70 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-500">
                 Overlap Score
               </p>
@@ -96,6 +99,30 @@ export function OverlapHeatmap({
               <p className="mt-1 text-sm text-gray-500">
                 Seen in {topSignal ? Object.keys(topSignal.funds || {}).length : 0} fund positions.
               </p>
+            </div>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f5f3ff_0%,#eef2ff_48%,#fff1f2_100%)] p-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-600">
+                    AI Overlap Summary
+                  </p>
+                  <h4 className="mt-2 text-lg font-semibold text-slate-900">
+                    {overlapSeverity} overlap concentration detected
+                  </h4>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+                    {overlapGuidance}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-white/80 px-4 py-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    First Move
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">
+                    {overlapAction}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
@@ -133,11 +160,8 @@ export function OverlapHeatmap({
                     return (
                       <td key={fundIdx} className="px-2 py-2 text-center">
                         <div
-                          className={clsx(
-                            'w-14 h-8 rounded flex items-center justify-center text-xs font-medium mx-auto',
-                            getColor(weight),
-                            getTextColor(weight)
-                          )}
+                          className="mx-auto flex h-9 w-16 items-center justify-center rounded-xl text-xs font-semibold shadow-sm ring-1 ring-white/50"
+                          style={getCellStyle(weight)}
                           title={`${stock} in ${fund}: ${(weight * 100).toFixed(1)}%`}
                         >
                           {weight > 0 ? `${(weight * 100).toFixed(1)}%` : '-'}
@@ -155,20 +179,20 @@ export function OverlapHeatmap({
         <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
           <span className="font-medium">Overlap level:</span>
           <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-green-200 rounded" />
+            <div className="h-4 w-4 rounded bg-[#ddd6fe]" />
             <span>&lt;3%</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-yellow-300 rounded" />
-            <span>3-5%</span>
+            <div className="h-4 w-4 rounded bg-[#6d28d9]" />
+            <span>3-4.5%</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-orange-400 rounded" />
-            <span>5-7%</span>
+            <div className="h-4 w-4 rounded bg-[#dc2626]" />
+            <span>4.5-8%</span>
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-red-500 rounded" />
-            <span>&gt;7%</span>
+            <div className="h-4 w-4 rounded bg-[#b91c1c]" />
+            <span>&gt;8%</span>
           </div>
         </div>
       </CardContent>

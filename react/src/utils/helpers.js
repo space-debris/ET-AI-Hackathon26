@@ -67,6 +67,20 @@ export function formatPercentage(value, decimals = 1) {
   return `${(value * 100).toFixed(decimals)}%`;
 }
 
+export function formatPercentagePoints(value, decimals = 1) {
+  return `${Number(value).toFixed(decimals)}%`;
+}
+
+export function humanizeLabel(value) {
+  if (!value) {
+    return '';
+  }
+
+  return String(value)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 export function formatDate(dateString) {
   const date = new Date(dateString);
   return new Intl.DateTimeFormat('en-IN', {

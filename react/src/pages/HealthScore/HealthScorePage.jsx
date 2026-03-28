@@ -9,7 +9,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { HealthScoreRadar, HealthScoreDetails } from '../../components/charts/HealthScoreChart';
 import { healthApi, reportApi, runtimeConfig, userApi } from '../../services/api';
-import { getScoreColor, getScoreLabel } from '../../utils/helpers';
+import { getScoreColor, getScoreLabel, humanizeLabel } from '../../utils/helpers';
 
 const container = {
   hidden: { opacity: 0 },
@@ -48,7 +48,7 @@ export function HealthScorePage() {
           reportApi.getReport(),
         ]);
         setHealthData(data);
-        setReportReady(Boolean(report));
+        setReportReady(Boolean(report) || Boolean(data));
       } catch (fetchError) {
         console.error('Failed to fetch health score:', fetchError);
         setError(fetchError.message);
@@ -133,6 +133,12 @@ export function HealthScorePage() {
   const maxPossible = healthData.dimensions.length * 100;
   const currentTotal = healthData.dimensions.reduce((sum, dimension) => sum + dimension.score, 0);
   const improvementPotential = maxPossible - currentTotal;
+  const strongestArea = healthData.dimensions.reduce((max, dimension) =>
+    dimension.score > max.score ? dimension : max
+  );
+  const focusArea = healthData.dimensions.reduce((min, dimension) =>
+    dimension.score < min.score ? dimension : min
+  );
 
   return (
     <motion.div
@@ -216,11 +222,10 @@ export function HealthScorePage() {
               <div>
                 <p className="text-sm text-gray-500">Strongest Area</p>
                 <p className="text-lg font-semibold text-gray-900">
-                  {
-                    healthData.dimensions.reduce((max, dimension) =>
-                      dimension.score > max.score ? dimension : max
-                    ).dimension
-                  }
+                  {humanizeLabel(strongestArea.dimension)}
+                </p>
+                <p className="mt-1 max-w-xs text-sm text-gray-500">
+                  {strongestArea.rationale}
                 </p>
               </div>
             </div>
@@ -236,11 +241,10 @@ export function HealthScorePage() {
               <div>
                 <p className="text-sm text-gray-500">Needs Attention</p>
                 <p className="text-lg font-semibold text-gray-900">
-                  {
-                    healthData.dimensions.reduce((min, dimension) =>
-                      dimension.score < min.score ? dimension : min
-                    ).dimension
-                  }
+                  {humanizeLabel(focusArea.dimension)}
+                </p>
+                <p className="mt-1 max-w-xs text-sm text-gray-500">
+                  {focusArea.suggestions?.[0] || focusArea.rationale}
                 </p>
               </div>
             </div>
@@ -271,7 +275,7 @@ export function HealthScorePage() {
                     <div key={idx}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-gray-700">
-                          {dimension.dimension}
+                          {humanizeLabel(dimension.dimension)}
                         </span>
                         <span
                           className="text-sm font-bold"

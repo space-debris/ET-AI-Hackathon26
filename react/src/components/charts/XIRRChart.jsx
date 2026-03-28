@@ -10,7 +10,11 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
-import { formatPercentage } from '../../utils/helpers';
+import {
+  formatCompactNumber,
+  formatPercentage,
+  formatPercentagePoints,
+} from '../../utils/helpers';
 
 export function XIRRBarChart({ fundWiseXirr, overallXirr, title = 'Fund-wise XIRR' }) {
   const data = Object.entries(fundWiseXirr).map(([fundName, xirr]) => ({
@@ -60,7 +64,7 @@ export function XIRRBarChart({ fundWiseXirr, overallXirr, title = 'Fund-wise XIR
               <XAxis
                 type="number"
                 domain={[0, Math.max(...data.map((d) => d.xirr)) * 1.1]}
-                tickFormatter={(v) => `${v}%`}
+                tickFormatter={(value) => formatPercentagePoints(value)}
               />
               <YAxis
                 type="category"
@@ -105,8 +109,8 @@ export function ReturnsComparisonChart({ holdings }) {
         <div className="bg-white px-4 py-3 shadow-lg rounded-lg border border-gray-100">
           <p className="font-semibold text-gray-900">{d.name}</p>
           <div className="mt-2 space-y-1 text-sm">
-            <p>Invested: <span className="font-medium">₹{(d.invested / 1000).toFixed(0)}K</span></p>
-            <p>Current: <span className="font-medium">₹{(d.current / 1000).toFixed(0)}K</span></p>
+            <p>Invested: <span className="font-medium">{formatCompactNumber(d.invested)}</span></p>
+            <p>Current: <span className="font-medium">{formatCompactNumber(d.current)}</span></p>
             <p>Returns: <span className={`font-bold ${d.returns >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {d.returns.toFixed(1)}%
             </span></p>
@@ -136,7 +140,7 @@ export function ReturnsComparisonChart({ holdings }) {
                 textAnchor="end"
               />
               <YAxis
-                tickFormatter={(v) => `₹${(v / 100000).toFixed(0)}L`}
+                tickFormatter={(value) => formatCompactNumber(value)}
                 tickLine={false}
                 axisLine={false}
               />

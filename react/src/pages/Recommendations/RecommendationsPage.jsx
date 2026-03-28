@@ -398,7 +398,7 @@ export function RecommendationsPage() {
                     .map((item, idx) => (
                       <li key={idx} className="flex items-center gap-2 text-sm">
                         <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                        <span>Switch {item.fundName.split(' ')[0]} as recommended by the backend.</span>
+                        <span>Switch {item.fundName.split(' ')[0]} as recommended by our AI system.</span>
                       </li>
                     ))}
                   {recommendations

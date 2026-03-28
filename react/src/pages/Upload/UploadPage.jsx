@@ -86,10 +86,14 @@ export function UploadPage() {
       setTimeout(() => {
         navigate('/portfolio');
       }, 1500);
-    } catch {
+    } catch (err) {
       clearInterval(progressInterval);
       setUploadState('error');
-      setError('Failed to process the statement. Please try again.');
+      setError(
+        err?.response?.data?.detail ||
+        err?.message ||
+        'Failed to process the statement. Please try again.'
+      );
     }
   };
 

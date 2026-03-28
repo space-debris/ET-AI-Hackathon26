@@ -51,6 +51,10 @@ class AnalyticsAgent:
     @staticmethod
     def _infer_category_from_name(fund_name: str) -> FundCategory:
         name = fund_name.lower()
+        if "emerging bluechip" in name:
+            return FundCategory.MULTI_CAP
+        if "bluechip" in name or "top 100" in name:
+            return FundCategory.LARGE_CAP
         if "large" in name:
             return FundCategory.LARGE_CAP
         if "mid" in name:

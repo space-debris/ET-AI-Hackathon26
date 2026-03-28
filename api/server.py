@@ -453,17 +453,22 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_report(self, session: dict[str, Any]) -> dict[str, Any]:
         report = session.get("report")
-        if report is None:
+        if report is None and session.get("analytics") is not None and session.get("user_profile") is not None:
+            report, _ = _ensure_report(session)
+        if report is None and session.get("analytics") is None:
             raise ApiError(HTTPStatus.NOT_FOUND, "No report is available for the current session.")
-        return {"report": report}
+        return {"report": report or {"analytics_only": True, "available": True}}
 
     def _handle_report_download(self, session_id: str, session: dict[str, Any]) -> None:
         report = session.get("report")
-        if report is None:
+        analytics = session.get("analytics")
+        if report is None and analytics is not None and session.get("user_profile") is not None:
+            report, _ = _ensure_report(session)
+        if report is None and analytics is None:
             raise ApiError(HTTPStatus.NOT_FOUND, "No report is available for download.")
 
         pdf_bytes = generate_pdf(
-            analytics=session.get("analytics"),
+            analytics=analytics,
             advisory_report=report,
             final_report=report if isinstance(report, FinalReport) else None,
         )

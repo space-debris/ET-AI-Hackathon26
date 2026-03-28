@@ -15,7 +15,7 @@ import {
 } from '../../components/charts/AllocationChart';
 import { XIRRBarChart, ReturnsComparisonChart } from '../../components/charts/XIRRChart';
 import { OverlapHeatmap } from '../../components/charts/OverlapHeatmap';
-import { portfolioApi, reportApi, runtimeConfig } from '../../services/api';
+import { portfolioApi, reportApi, runtimeConfig, userApi } from '../../services/api';
 import {
   formatCurrency,
   formatPercentage,
@@ -46,6 +46,15 @@ export function PortfolioPage() {
 
   useEffect(() => {
     async function fetchData() {
+      try {
+        await userApi.getProfile();
+      } catch {
+        const cachedProfile = userApi.getCachedProfile();
+        if (cachedProfile) {
+          await userApi.updateProfile(cachedProfile);
+        }
+      }
+
       const [portfolioResult, reportResult] = await Promise.allSettled([
         portfolioApi.getAnalytics(),
         reportApi.getReport(),
@@ -60,10 +69,10 @@ export function PortfolioPage() {
       }
 
       if (reportResult.status === 'fulfilled') {
-        setReportReady(Boolean(reportResult.value));
+        setReportReady(Boolean(reportResult.value) || portfolioResult.status === 'fulfilled');
       } else {
         console.error('Failed to fetch report metadata:', reportResult.reason);
-        setReportReady(false);
+        setReportReady(portfolioResult.status === 'fulfilled');
       }
 
       setLoading(false);
@@ -394,35 +403,6 @@ export function PortfolioPage() {
         </Tabs>
       </motion.div>
 
-      {/* Top Holdings Analysis */}
-      <motion.div variants={item}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Stock Holdings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {portfolio.holdings.slice(0, 3).map((fund, idx) => (
-                <div key={idx} className="border border-gray-100 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 text-sm mb-3">
-                    {fund.fundName.split(' ').slice(0, 3).join(' ')}
-                  </h4>
-                  <div className="space-y-2">
-                    {fund.topHoldings.slice(0, 5).map((stock, sIdx) => (
-                      <div key={sIdx} className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">{stock.stockName}</span>
-                        <span className="text-sm font-medium text-gray-900">
-                          {(stock.weight * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
     </motion.div>
   );
 }
