@@ -114,6 +114,9 @@ class SessionStore:
             self._sessions[session_id] = session
         return session
 
+    def clear(self, session_id: str) -> None:
+        self._sessions.pop(session_id, None)
+
 
 def _run_profile_only(profile: UserFinancialProfile) -> tuple[Optional[PortfolioAnalytics], Optional[FinalReport | AdvisoryReport], list[str]]:
     orchestrator = FinSageOrchestrator()
@@ -216,6 +219,9 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         self._handle_request("PUT")
 
+    def do_DELETE(self) -> None:
+        self._handle_request("DELETE")
+
     def _handle_request(self, method: str) -> None:
         try:
             session_id, session = self._get_session()
@@ -257,6 +263,8 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
                 response = self._handle_report(session)
             elif method == "GET" and path == "/api/report/download":
                 return self._handle_report_download(session_id, session)
+            elif method == "DELETE" and path == "/api/session":
+                response = self._handle_delete_session(session_id)
             else:
                 raise ApiError(HTTPStatus.NOT_FOUND, f"Unsupported endpoint: {path}")
 
@@ -270,7 +278,7 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
     def _send_common_headers(self, session_id: Optional[str] = None) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Session-Id")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Expose-Headers", "X-Session-Id")
         if session_id:
             self.send_header("X-Session-Id", session_id)
@@ -482,6 +490,13 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(pdf_bytes)))
         self.end_headers()
         self.wfile.write(pdf_bytes)
+
+    def _handle_delete_session(self, session_id: str) -> dict[str, Any]:
+        self.server.sessions.clear(session_id)
+        return {
+            "success": True,
+            "message": "All cached session data has been deleted.",
+        }
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:

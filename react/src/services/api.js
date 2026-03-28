@@ -65,6 +65,22 @@ const getStoredProfile = () => {
   }
 };
 
+const clearStoredAppData = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const keysToDelete = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (key?.startsWith('finsage-')) {
+      keysToDelete.push(key);
+    }
+  }
+
+  keysToDelete.forEach((key) => window.localStorage.removeItem(key));
+};
+
 // Create axios instance with default config
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -677,6 +693,21 @@ export const userApi = {
 
   rememberProfile(profile) {
     setStoredProfile(profile);
+  },
+
+  async clearAllData() {
+    if (DEMO_MODE_ENABLED) {
+      clearStoredAppData();
+      return { success: true };
+    }
+
+    try {
+      const response = await api.delete('/session');
+      clearStoredAppData();
+      return response.data;
+    } catch (error) {
+      throw withApiErrorContext('Failed to delete saved data.', error);
+    }
   },
 };
 

@@ -1,8 +1,40 @@
-import { Settings as SettingsIcon, Bell, User, Shield, Palette } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Bell, User, Shield } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { userApi } from '../../services/api';
 
 export function SettingsPage() {
+  const navigate = useNavigate();
+  const [deleting, setDeleting] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleDeleteAllData = async () => {
+    const confirmed = window.confirm(
+      'Delete all uploaded statement data, saved profile data, and cached report results from this browser session?'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleting(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      await userApi.clearAllData();
+      setMessage('All saved data was deleted successfully. You can start fresh now.');
+      navigate('/upload', { replace: true });
+    } catch (deleteError) {
+      setError(deleteError.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
@@ -74,7 +106,20 @@ export function SettingsPage() {
               <p className="text-sm text-gray-500">Your data is processed locally and never stored on our servers</p>
             </div>
           </div>
-          <Button variant="danger" size="sm">Delete All Data</Button>
+          {message ? (
+            <p className="text-sm font-medium text-emerald-700">{message}</p>
+          ) : null}
+          {error ? (
+            <p className="text-sm font-medium text-red-600">{error}</p>
+          ) : null}
+          <Button
+            variant="danger"
+            size="sm"
+            loading={deleting}
+            onClick={handleDeleteAllData}
+          >
+            Delete All Data
+          </Button>
         </CardContent>
       </Card>
     </div>

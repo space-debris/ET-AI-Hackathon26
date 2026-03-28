@@ -11,6 +11,7 @@ import tempfile
 from datetime import datetime
 from fpdf import FPDF
 from typing import Optional
+from math import ceil
 
 os.environ.setdefault("XDG_CACHE_HOME", tempfile.gettempdir())
 os.environ.setdefault("MPLCONFIGDIR", tempfile.gettempdir())
@@ -77,41 +78,44 @@ class FinSageReport(FPDF):
         tile_height = 20
         gap = 8
         start_x = 10
-        current_x = start_x
+        start_y = self.get_y()
+        columns = 2
+        row_gap = 6
 
         for index, (label, value, color) in enumerate(metrics):
-            if index == 2:
-                self.ln(tile_height + 6)
-                current_x = start_x
-
+            row = index // columns
+            col = index % columns
+            current_x = start_x + col * (tile_width + gap)
+            current_y = start_y + row * (tile_height + row_gap)
             self.set_fill_color(*color)
             self.set_draw_color(*color)
-            self.rect(current_x, self.get_y(), tile_width, tile_height, style="FD")
-            self.set_xy(current_x + 4, self.get_y() + 3)
+            self.rect(current_x, current_y, tile_width, tile_height, style="FD")
+            self.set_xy(current_x + 4, current_y + 3)
             self.set_font("Helvetica", "B", 8)
             self.set_text_color(255, 255, 255)
-            self.cell(tile_width - 8, 4, _sanitize(label), new_x="LMARGIN", new_y="NEXT")
-            self.set_x(current_x + 4)
+            self.cell(tile_width - 8, 4, _sanitize(label))
+            self.set_xy(current_x + 4, current_y + 9)
             self.set_font("Helvetica", "B", 12)
             self.cell(tile_width - 8, 7, _sanitize(value))
-            current_x += tile_width + gap
 
-        self.ln(tile_height + 8)
+        total_rows = ceil(len(metrics) / columns)
+        self.set_y(start_y + total_rows * (tile_height + row_gap) + 2)
 
-    def chart_image(self, image_path: str, title: str, width: float = 165):
+    def chart_image(self, image_path: str, title: str, width: float = 156):
         with Image.open(image_path) as chart_image:
             pixel_width, pixel_height = chart_image.size
 
         display_height = width * (pixel_height / pixel_width)
-        required_height = 10 + display_height + 6
+        required_height = 8 + display_height + 4
         if self.get_y() + required_height > self.page_break_trigger:
             self.add_page()
         self.set_font("Helvetica", "B", 10)
         self.set_text_color(60, 60, 80)
         self.cell(0, 6, _sanitize(title), new_x="LMARGIN", new_y="NEXT")
         self.ln(2)
-        self.image(image_path, x=15, y=self.get_y(), w=width)
-        self.ln(display_height + 6)
+        image_x = (self.w - width) / 2
+        self.image(image_path, x=image_x, y=self.get_y(), w=width)
+        self.ln(display_height + 4)
 
 
 def _fmt_inr(value: float) -> str:
@@ -214,6 +218,32 @@ def _estimate_health_block_height(pdf: FPDF, label: str, rationale: str, suggest
         total_lines += len(_wrap_text_lines(pdf, f"- {suggestion}", usable_width))
 
     return title_height + (total_lines * line_height) + padding
+
+
+def _ensure_space(pdf: FPDF, required_height: float) -> None:
+    if pdf.get_y() + required_height > pdf.page_break_trigger:
+        pdf.add_page()
+
+
+def _fresh_page_capacity(pdf: FPDF) -> float:
+    # After a new page, the custom header consumes roughly 28mm before content starts.
+    return pdf.page_break_trigger - 28
+
+
+def _estimate_fire_section_height(pdf: FPDF, at_current_trajectory: str | None) -> float:
+    base_height = 68
+    if at_current_trajectory:
+        usable_width = pdf.w - pdf.l_margin - pdf.r_margin
+        base_height += len(_wrap_text_lines(pdf, f"At Current Rate: {at_current_trajectory}", usable_width)) * 5
+    return base_height
+
+
+def _estimate_tax_section_height(pdf: FPDF, missed_deductions: list[str]) -> float:
+    base_height = 56
+    usable_width = pdf.w - pdf.l_margin - pdf.r_margin
+    for deduction in missed_deductions:
+        base_height += len(_wrap_text_lines(pdf, f"- {deduction}", usable_width)) * 4
+    return base_height + 8
 
 
 def _shorten_label(value: str, limit: int = 18) -> str:
@@ -516,7 +546,20 @@ def generate_pdf(
 
         # ── FIRE Plan ──────────────────────────────────────────────────────
         if report and report.fire_plan:
-            pdf.add_page()
+            fire_height = _estimate_fire_section_height(pdf, report.fire_plan.at_current_trajectory)
+            tax_height = None
+            if report.tax_analysis:
+                tax_height = _estimate_tax_section_height(pdf, report.tax_analysis.missed_deductions)
+
+            if (
+                tax_height is not None
+                and fire_height + tax_height <= _fresh_page_capacity(pdf)
+                and pdf.get_y() + fire_height + tax_height > pdf.page_break_trigger
+            ):
+                pdf.add_page()
+            else:
+                _ensure_space(pdf, fire_height)
+
             pdf.section_title("FIRE Path Plan")
             fp = report.fire_plan
             pdf.key_value("Target Corpus:", _fmt_inr(fp.target_corpus))
@@ -529,7 +572,8 @@ def generate_pdf(
 
         # ── Tax Analysis ──────────────────────────────────────────────────
         if report and report.tax_analysis:
-            pdf.add_page()
+            tax_height = _estimate_tax_section_height(pdf, report.tax_analysis.missed_deductions)
+            _ensure_space(pdf, tax_height)
             pdf.section_title("Tax Regime Comparison")
             ta = report.tax_analysis
             pdf.key_value("Gross Income:", _fmt_inr(ta.gross_income))
