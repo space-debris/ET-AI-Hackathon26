@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { PieChart, TrendingUp, Layers, DollarSign, Download } from 'lucide-react';
+import { PieChart, TrendingUp, Layers, IndianRupee, Download } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatCard } from '../../components/ui/StatCard';
@@ -201,7 +201,7 @@ export function PortfolioPage() {
         <StatCard
           title="Total Value"
           value={formatCurrency(portfolio.totalCurrentValue)}
-          icon={DollarSign}
+          icon={IndianRupee}
         />
         <StatCard
           title="Total Invested"
