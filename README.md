@@ -94,7 +94,7 @@ FinSage utilizes a **Sequential Multi-Agent Pipeline**. Every agent executes wit
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+ (for the React UX)
-- Google Gemini API Key
+- LLM Service API Key
 
 ### Backend Setup
 
