@@ -26,8 +26,31 @@ FUND_FACTSHEETS_DIR = str(DATA_DIR / "fund_factsheets")
 # LLM Configuration
 # =============================================================================
 
+def _parse_api_keys(raw_value: str) -> list[str]:
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_API_KEY_SECONDARY = os.getenv("GEMINI_API_KEY_SECONDARY", os.getenv("GEMINI_API_KEY_2", ""))
+GEMINI_API_KEYS = _dedupe_preserve_order(
+    [
+        *([GEMINI_API_KEY] if GEMINI_API_KEY else []),
+        *([GEMINI_API_KEY_SECONDARY] if GEMINI_API_KEY_SECONDARY else []),
+        *_parse_api_keys(os.getenv("GEMINI_API_KEYS", "")),
+    ]
+)
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0.3"))
 GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "8192"))
 
@@ -87,6 +110,7 @@ SECTION_80C_LIMIT = 150000        # ₹1.5L
 SECTION_80CCD_1B_LIMIT = 50000   # ₹50K additional NPS
 SECTION_80D_LIMIT_SELF = 25000   # ₹25K (health insurance, self)
 SECTION_80D_LIMIT_PARENTS = 50000  # ₹50K (health insurance, senior citizen parents)
+SECTION_80TTA_LIMIT = 10000       # ₹10K (savings account interest)
 SECTION_24_LIMIT = 200000         # ₹2L (home loan interest)
 HRA_METRO_PERCENTAGE = 0.50      # 50% of basic for metro cities
 HRA_NON_METRO_PERCENTAGE = 0.40  # 40% of basic for non-metro

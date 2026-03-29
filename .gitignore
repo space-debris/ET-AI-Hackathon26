@@ -49,3 +49,6 @@ coverage.xml
 # Logs
 *.log
 logs/
+err.txt
+err_output.txt
+test_import.py

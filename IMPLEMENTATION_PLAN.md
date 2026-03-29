@@ -1,7 +1,7 @@
 # FinSage AI — Detailed Implementation Plan
 
 > **Hackathon**: ET AI Hackathon 2026 (Avataar.ai × Economic Times) — Track 9: AI Money Mentor
-> **Deadline**: March 29, 2026 | **Today**: March 25, 2026 (4 days remaining)
+> **Deadline**: March 29, 2026 | **Today**: March 26, 2026 (3 days remaining)
 > **Team**: Mayur (orchestration), Abhishek (analytics), Ayush (frontend)
 
 ---
@@ -13,7 +13,63 @@ I've fully understood:
 - **3 team members** working on independent branches (`orchestration`, `analytics`, `frontend`) with shared contracts in `shared/schemas.py` and `shared/config.py`
 - **3 mandatory judge scenarios**: FIRE Path Plan, Tax Regime Optimisation, MF Portfolio X-Ray + Rebalancing
 - **Judging rubric**: Autonomy Depth (30%), Multi-Agent Design (20%), Technical Creativity (20%), Enterprise Readiness (20%), Impact Quantification (10%)
-- **Tech stack**: LangGraph, Gemini 1.5 Flash, pdfplumber/camelot, scipy, mftool, ChromaDB, Streamlit, Plotly, Docker
+- **Tech stack**: LangGraph, Gemini 3 Flash Preview (runtime default, still configurable), pdfplumber/camelot, scipy, mftool, ChromaDB, Streamlit, Plotly, Docker
+
+---
+
+## Current Status Snapshot (Updated Mar 26, 2026)
+
+### Overall
+
+- **Core product**: Mostly built and working locally
+- **Approx completion vs original plan**: ~90%
+- **Main remaining gap**: manual UI walkthrough validation plus submission packaging/polish, not base feature construction
+
+### Completed Against Plan
+
+- [x] Shared contracts in `shared/schemas.py`
+- [x] Shared config in `shared/config.py`
+- [x] Prompt templates in `prompts/`
+- [x] Advisory agent
+- [x] Compliance agent
+- [x] Parser agent
+- [x] Analytics agent
+- [x] XIRR calculator
+- [x] Orchestrator with LangGraph routing
+- [x] Streamlit frontend with upload + profile flow
+- [x] PDF report generation
+- [x] Synthetic CAMS sample PDFs for testing
+- [x] Unit tests for parser, analytics, and advisory flows
+- [x] Local upload flow fixed for generated CAMS samples
+
+### Remaining Before Submission
+
+- [ ] Manual end-to-end validation of all 3 judge scenarios in the live UI
+- [ ] Dockerfile
+- [ ] `docker-compose.yml`
+- [ ] Final architecture document for submission
+- [ ] README polish: setup, screenshots, demo flow, impact framing
+- [ ] Demo video / final submission collateral
+
+### Judge Validation Status (Updated Mar 26, 2026)
+
+- [ ] 1. Streamlit walkthrough â€” Scenario A (FIRE Planner) manual click-through still pending, but the UI now auto-refreshes after the first run without pressing `Run Analysis` again
+- [ ] 2. Streamlit walkthrough â€” Scenario C (Rebalancing tab with `sample_cams_detailed.pdf`) manual click-through still pending
+- [x] 3. Backend live validation â€” Scenario A completed via direct Gemini smoke run on `gemini-3-flash-preview`
+- [x] 4. Backend live validation â€” Scenario C completed via direct Gemini smoke run on `gemini-3-flash-preview`
+
+### Still Weak / Improve If Time Allows
+
+- [ ] Parser reliability for more real-world CAS variants beyond the current CAMS-style samples
+- [ ] Better parse-confidence and user-facing failure messaging
+- [ ] Stronger factsheet/RAG integration if it is part of the final demo story
+- [ ] UI refinement pass based on review feedback
+
+### Practical Read Of The Plan
+
+- **Phases 1-3**: effectively complete
+- **Phase 4**: backend validation complete for Scenarios A/C, UI walkthrough still pending
+- **Phase 5**: largely pending
 
 ---
 
@@ -50,7 +106,7 @@ All Pydantic models that serve as inter-agent data contracts. Every team member 
 #### [NEW] [config.py](file:///d:/ET-AI-Hackathon26/shared/config.py)
 
 - `GEMINI_API_KEY` loaded from `.env` via `python-dotenv`
-- `GEMINI_MODEL` = `"gemini-1.5-flash"`
+- `GEMINI_MODEL` = `"gemini-3-flash-preview"` (current validated default; keep env-configurable)
 - `CHROMA_PERSIST_DIR` = `"./data/chromadb"`
 - `MAX_RETRIES` = 3
 - `TEMPERATURE` = 0.3 (low for financial accuracy)
@@ -248,12 +304,14 @@ Test all 3 mandatory judge scenarios end-to-end.
 - Create test fixture with exact inputs from rubric
 - Verify month-by-month output, glidepath percentages, insurance gap
 - Test dynamic update: change retirement age 50→55, verify output changes without full re-run
+- Status: backend live validation complete; UI manual walkthrough still pending
 
 #### Scenario B: Tax Regime Optimisation
 - Create test fixture: salary ₹18L, HRA ₹3.6L, etc.
 - Verify step-by-step calculations under both regimes
 - Verify exact liability numbers, optimal regime identification
 - Verify missed deductions and additional instrument suggestions
+- Status: deterministic/unit coverage is strong; live UI walkthrough still pending
 
 #### Scenario C: MF Portfolio X-Ray
 - Use synthetic CAMS PDF with 6 funds across 4 AMCs
@@ -261,6 +319,7 @@ Test all 3 mandatory judge scenarios end-to-end.
 - Verify overlap detection (Reliance, HDFC, Infosys across 3 funds)
 - Verify expense ratio drag in ₹ terms
 - Verify rebalancing recommendations are fund-specific with tax context
+- Status: backend live validation complete on `sample_cams_detailed.pdf`; UI manual walkthrough still pending
 
 ---
 
@@ -365,7 +424,7 @@ graph TD
 
 ### Manual Verification
 
-1. **Scenario A/B/C**: Run each scenario through the Streamlit UI and verify outputs match rubric requirements — this is best done by Ayush once frontend is connected
+1. **Scenario A/B/C**: Run each scenario through the Streamlit UI and verify outputs match rubric requirements — A/C backend live smoke is now complete, but browser walkthrough is still required
 2. **Docker**: Build and run `docker-compose up`, verify app accessible at `localhost:8501`
 3. **README/Docs**: Review for completeness, ensure architecture diagram is readable
 
@@ -376,11 +435,13 @@ graph TD
 1. ✅ `shared/schemas.py` — immediate
 2. ✅ `shared/config.py` — immediate
 3. ✅ Repo structure + push — immediate
-4. `prompts/advisory_system.txt`, `fire_planner.txt`, `tax_optimizer.txt`
-5. `agents/advisory_agent.py`
-6. `agents/compliance_agent.py`
-7. `agents/orchestrator.py` (with mock parser/analytics first)
-8. `tests/test_advisory.py`
-9. Integration testing with Abhishek's real agents
-10. `Dockerfile` + `docker-compose.yml`
-11. `README.md` + architecture doc
+4. âœ… `prompts/advisory_system.txt`, `fire_planner.txt`, `tax_optimizer.txt`
+5. âœ… `agents/advisory_agent.py`
+6. âœ… `agents/compliance_agent.py`
+7. âœ… `agents/orchestrator.py` (with real parser/analytics now connected)
+8. âœ… `tests/test_advisory.py`
+9. âœ… Integration testing with Abhishek's real agents
+10. [ ] `Dockerfile` + `docker-compose.yml`
+11. [ ] `README.md` + architecture doc final polish
+12. [ ] Scenario walkthrough validation in UI
+13. [ ] Submission assets (screenshots/demo video/form)

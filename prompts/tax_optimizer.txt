@@ -1,0 +1,96 @@
+You are generating a detailed Tax Regime Comparison for an Indian salaried individual for FY 2025-26.
+
+=== TAXPAYER PROFILE ===
+- Gross Annual Income: ₹{annual_income}
+- Base Salary: ₹{base_salary}
+- HRA Received: ₹{hra_received}
+- Rent Paid: ₹{rent_paid}
+- Metro City: {metro_city}
+- Section 80C Investments: ₹{section_80c} (PPF, ELSS, LIC, etc.)
+- NPS Contribution (80CCD(1B)): ₹{nps_contribution}
+- Home Loan Interest (Sec 24): ₹{home_loan_interest}
+- Medical Insurance Premium (80D): ₹{medical_insurance}
+- Other Deductions: ₹{other_deductions}
+
+=== TAX SLABS — OLD REGIME (FY 2025-26) ===
+- Standard Deduction: ₹75,000
+- Up to ₹2,50,000: NIL
+- ₹2,50,001 - ₹5,00,000: 5%
+- ₹5,00,001 - ₹10,00,000: 20%
+- Above ₹10,00,000: 30%
+- Rebate u/s 87A: If taxable income ≤ ₹5L, rebate up to ₹12,500
+- Cess: 4% on total tax
+
+=== TAX SLABS — NEW REGIME (FY 2025-26, Budget 2025) ===
+- Standard Deduction: ₹75,000
+- Up to ₹4,00,000: NIL
+- ₹4,00,001 - ₹8,00,000: 5%
+- ₹8,00,001 - ₹12,00,000: 10%
+- ₹12,00,001 - ₹16,00,000: 15%
+- ₹16,00,001 - ₹20,00,000: 20%
+- ₹20,00,001 - ₹24,00,000: 25%
+- Above ₹24,00,000: 30%
+- Rebate u/s 87A: If taxable income ≤ ₹12L, rebate up to ₹60,000
+- Cess: 4% on total tax
+
+=== YOUR TASK ===
+
+1. **OLD REGIME — Step-by-Step Calculation**:
+   Show each step as a TaxStep with description, amount, and section:
+   a. Start with Gross Income
+   b. Subtract Standard Deduction (₹75,000)
+   c. Calculate HRA Exemption = min(HRA received, Rent paid - 10% of basic salary, 50%/40% of basic salary for metro/non-metro)
+   d. Subtract 80C deductions (capped at ₹1,50,000)
+   e. Subtract 80CCD(1B) NPS (capped at ₹50,000)
+   f. Subtract Section 24 Home Loan Interest (capped at ₹2,00,000)
+   g. Subtract 80D Medical Insurance (capped at ₹25,000 self + ₹50,000 parents)
+   h. Subtract any other deductions
+   i. = Taxable Income under Old Regime
+   j. Apply old regime slab rates
+   k. Apply 87A rebate if applicable
+   l. Add 4% cess
+   m. = Total Tax under Old Regime
+
+2. **NEW REGIME — Step-by-Step Calculation**:
+   a. Start with Gross Income
+   b. Subtract Standard Deduction (₹75,000)
+   c. = Taxable Income under New Regime (no other deductions allowed)
+   d. Apply new regime slab rates
+   e. Apply 87A rebate if applicable
+   f. Add 4% cess
+   g. = Total Tax under New Regime
+
+3. **Recommendation**:
+   - recommended_regime: "old" or "new" (whichever has lower tax)
+   - savings_amount: absolute difference in INR
+
+4. **Missed Deductions**:
+   - Identify deductions the taxpayer is NOT currently utilising but could be
+   - e.g., if NPS contribution is 0, suggest using ₹50K under 80CCD(1B)
+   - e.g., if 80C is below ₹1.5L, suggest PPF/ELSS to fill the gap
+
+5. **Additional Tax-Saving Instruments** (recommend 2-3):
+   For each: name, section, max_limit, expected_return, liquidity, risk, rationale
+
+=== OUTPUT FORMAT ===
+Return valid JSON matching the TaxRegimeComparison Pydantic schema:
+{{
+  "gross_income": ...,
+  "old_regime_steps": [...],
+  "old_taxable_income": ...,
+  "old_total_tax": ...,
+  "new_regime_steps": [...],
+  "new_taxable_income": ...,
+  "new_total_tax": ...,
+  "recommended_regime": "...",
+  "savings_amount": ...,
+  "missed_deductions": [...],
+  "additional_instruments": [...]
+}}
+
+=== IMPORTANT ===
+- Show ALL calculation steps explicitly — the user needs to see the math to trust the output
+- All amounts must be in INR (numeric, no currency symbols)
+- Use EXACT slab rates as provided above — do not use outdated slabs
+- HRA exemption calculation must be correct (minimum of 3 components)
+- If a deduction field is null or 0, skip it but mention it in missed_deductions if applicable

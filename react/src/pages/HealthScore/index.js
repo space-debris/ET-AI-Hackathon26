@@ -1,0 +1,1 @@
+export { HealthScorePage } from './HealthScorePage';
