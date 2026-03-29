@@ -29,6 +29,7 @@ import {
   calculateReturns,
   getCategoryLabel,
   getScoreColor,
+  humanizeLabel,
 } from '../../utils/helpers';
 import { clsx } from 'clsx';
 
@@ -416,7 +417,9 @@ export function DashboardPage() {
                       <div className="space-y-3">
                         {healthScore.dimensions.slice(0, 4).map((dimension, idx) => (
                           <div key={idx} className="flex items-center justify-between">
-                            <span className="text-sm text-gray-600">{dimension.dimension}</span>
+                            <span className="text-sm text-gray-600">
+                              {humanizeLabel(dimension.dimension)}
+                            </span>
                             <div className="flex items-center gap-3">
                               <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                                 <motion.div

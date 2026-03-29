@@ -111,6 +111,10 @@ def test_fire_generate_endpoint_returns_plan_payload():
         assert data["fire_plan"]["target_corpus"] > data["fire_plan"]["current_corpus"]
         assert data["fire_plan"]["monthly_sip_required"] >= 0
         assert len(data["fire_plan"]["milestones"]) == 16
+        assert data["fire_plan"]["insurance_gap"]["recommended_life_cover"] == 24000000.0
+        assert data["fire_plan"]["insurance_gap"]["current_asset_buffer"] == 2400000.0
+        assert data["fire_plan"]["insurance_gap"]["total_gap"] == 21600000.0
+        assert "10x annual income" in data["fire_plan"]["insurance_gap"]["formula"]
         assert data["fire_plan"]["at_current_trajectory"]
     finally:
         server.shutdown()

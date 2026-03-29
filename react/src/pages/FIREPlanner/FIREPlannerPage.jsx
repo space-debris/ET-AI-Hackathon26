@@ -17,7 +17,11 @@ import { Slider } from '../../components/ui/Slider';
 import { StatCard } from '../../components/ui/StatCard';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
-import { FIRETimelineChart, SIPProgressChart } from '../../components/charts/FIREChart';
+import {
+  FIRETimelineChart,
+  InsuranceGapChart,
+  SIPProgressChart,
+} from '../../components/charts/FIREChart';
 import { fireApi, runtimeConfig, userApi } from '../../services/api';
 import { formatCurrency, formatCompactNumber } from '../../utils/helpers';
 
@@ -91,6 +95,77 @@ const writeCachedFirePlan = (profile, firePlan) => {
   window.localStorage.setItem(FIRE_PLAN_CACHE_KEY, JSON.stringify(payload));
 };
 
+const enrichInsuranceGap = (insuranceGap, profile) => {
+  if (!insuranceGap && !profile) {
+    return null;
+  }
+
+  const annualIncome = Number(profile?.annualIncome) || 0;
+  const currentAssetBuffer =
+    insuranceGap?.currentAssetBuffer ??
+    insuranceGap?.current_asset_buffer ??
+    toNumericCorpus(profile?.existingInvestments);
+  const incomeMultiple =
+    insuranceGap?.incomeMultiple ??
+    insuranceGap?.income_multiple ??
+    10;
+  const recommendedLifeCover =
+    insuranceGap?.recommendedLifeCover ??
+    insuranceGap?.recommended_life_cover ??
+    Math.max(annualIncome * incomeMultiple, 0);
+  const totalGap =
+    insuranceGap?.totalGap ??
+    insuranceGap?.total_gap ??
+    insuranceGap?.lifeCoverGap ??
+    insuranceGap?.life_cover_gap ??
+    Math.max(recommendedLifeCover - currentAssetBuffer, 0);
+  const expenseRunwayMonths =
+    insuranceGap?.expenseRunwayMonths ??
+    insuranceGap?.expense_runway_months ??
+    ((Number(profile?.monthlyExpenses) || 0) > 0
+      ? currentAssetBuffer / Number(profile.monthlyExpenses)
+      : 0);
+  const coverageRatioPct =
+    insuranceGap?.coverageRatioPct ??
+    insuranceGap?.coverage_ratio_pct ??
+    (recommendedLifeCover > 0 ? (currentAssetBuffer / recommendedLifeCover) * 100 : 0);
+
+  return {
+    ...insuranceGap,
+    totalGap,
+    lifeCoverGap:
+      insuranceGap?.lifeCoverGap ??
+      insuranceGap?.life_cover_gap ??
+      totalGap,
+    recommendedLifeCover,
+    currentAssetBuffer,
+    incomeMultiple,
+    expenseRunwayMonths: Number(expenseRunwayMonths.toFixed(1)),
+    coverageRatioPct: Number(coverageRatioPct.toFixed(1)),
+    formula:
+      insuranceGap?.formula ??
+      `${incomeMultiple}x annual income (${formatCurrency(recommendedLifeCover)}) minus current investment buffer (${formatCurrency(currentAssetBuffer)})`,
+    healthCoverRecommendation:
+      insuranceGap?.healthCoverRecommendation ??
+      insuranceGap?.health_cover_recommendation ??
+      'Maintain at least a ₹10L family floater health policy.',
+    summary:
+      insuranceGap?.summary ??
+      `Estimated protection gap: ${formatCompactNumber(totalGap)} using a ${incomeMultiple}x income rule and the current investment buffer as the available family cushion.`,
+  };
+};
+
+const normalizeCachedFirePlan = (firePlan, profile) => {
+  if (!firePlan) {
+    return null;
+  }
+
+  return {
+    ...firePlan,
+    insuranceGap: enrichInsuranceGap(firePlan.insuranceGap, profile),
+  };
+};
+
 const restoreCachedFirePlan = (profile) => {
   const cached = readCachedFirePlan();
   if (!cached?.firePlan) {
@@ -102,7 +177,9 @@ const restoreCachedFirePlan = (profile) => {
     return null;
   }
 
-  return cached.profileSignature === getProfileSignature(profile) ? cached.firePlan : null;
+  return cached.profileSignature === getProfileSignature(profile)
+    ? normalizeCachedFirePlan(cached.firePlan, profile)
+    : null;
 };
 
 const toNumericCorpus = (existingInvestments) => {
@@ -311,7 +388,8 @@ export function FIREPlannerPage() {
   }, [profile, updating]);
 
   const yearsToFire = profile.targetRetirementAge - profile.age;
-  const insuranceGapValue = firePlan?.insuranceGap?.totalGap ?? 0;
+  const insuranceGap = enrichInsuranceGap(firePlan?.insuranceGap, profile);
+  const insuranceGapValue = insuranceGap?.totalGap ?? 0;
   const firstMilestone = firePlan?.milestones?.[0] ?? null;
   const lastMilestone =
     firePlan?.milestones?.[firePlan.milestones.length - 1] ?? null;
@@ -365,7 +443,8 @@ export function FIREPlannerPage() {
           <CardHeader>
             <CardTitle>Your Profile</CardTitle>
             <CardDescription>
-              Once you generate a plan, future profile changes refresh the output automatically.
+              Once you generate a plan, future profile changes refresh the output automatically
+              after a short pause. No full page reload is needed.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -439,7 +518,12 @@ export function FIREPlannerPage() {
               options={riskProfiles}
             />
 
-            <div className="md:col-span-2 xl:col-span-4 flex justify-end">
+            <div className="md:col-span-2 xl:col-span-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <p className="text-sm text-gray-500">
+                {firePlan
+                  ? 'Live updates are active. Edits recompute the plan automatically in about a second.'
+                  : 'Generate the first plan to unlock live updates while the user edits these fields.'}
+              </p>
               <Button
                 className="w-full md:w-auto"
                 onClick={handleRunPlan}
@@ -510,6 +594,10 @@ export function FIREPlannerPage() {
 
               <motion.div variants={item}>
                 <SIPProgressChart milestones={firePlan.milestones} />
+              </motion.div>
+
+              <motion.div variants={item}>
+                <InsuranceGapChart insuranceGap={insuranceGap} />
               </motion.div>
 
               <motion.div variants={item}>
@@ -629,7 +717,7 @@ export function FIREPlannerPage() {
                         <h4 className="font-semibold text-purple-900">Insurance Check</h4>
                         <p className="text-sm text-purple-700 mt-1">
                           {insuranceGapValue
-                            ? `Additional cover needed: ${formatCompactNumber(insuranceGapValue)}.`
+                            ? insuranceGap?.summary ?? `${formatCompactNumber(insuranceGapValue)} of additional protection is still needed.`
                             : 'The current response did not include an insurance gap estimate.'}
                         </p>
                       </div>

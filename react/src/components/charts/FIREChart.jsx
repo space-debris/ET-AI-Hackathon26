@@ -1,6 +1,9 @@
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -9,10 +12,11 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
-import { formatCompactNumber } from '../../utils/helpers';
+import { formatCompactNumber, formatCurrency } from '../../utils/helpers';
 
 const timelineChartMargin = { top: 10, right: 64, left: 24, bottom: 8 };
 const sipChartMargin = { top: 10, right: 32, left: 24, bottom: 8 };
+const insuranceChartMargin = { top: 10, right: 24, left: 24, bottom: 8 };
 
 export function FIRETimelineChart({ milestones, targetCorpus }) {
   const data = milestones.map((m) => ({
@@ -246,6 +250,174 @@ export function SIPProgressChart({ milestones }) {
               />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function InsuranceGapChart({ insuranceGap }) {
+  const recommendedLifeCover = insuranceGap?.recommendedLifeCover ?? 0;
+  const currentAssetBuffer = insuranceGap?.currentAssetBuffer ?? 0;
+  const totalGap = insuranceGap?.totalGap ?? 0;
+  const expenseRunwayMonths = insuranceGap?.expenseRunwayMonths ?? 0;
+  const coverageRatioPct = insuranceGap?.coverageRatioPct ?? (
+    recommendedLifeCover > 0 ? (currentAssetBuffer / recommendedLifeCover) * 100 : 0
+  );
+
+  const data = [
+    {
+      label: 'Recommended cover',
+      value: recommendedLifeCover,
+      fill: '#2563eb',
+      detail: '10x income rule',
+    },
+    {
+      label: 'Current asset buffer',
+      value: currentAssetBuffer,
+      fill: '#14b8a6',
+      detail: 'Existing investable corpus',
+    },
+    {
+      label: 'Remaining gap',
+      value: totalGap,
+      fill: '#f97316',
+      detail: 'Additional protection needed',
+    },
+  ];
+  const exactEquation = `${formatCurrency(recommendedLifeCover)} - ${formatCurrency(currentAssetBuffer)} = ${formatCurrency(totalGap)}`;
+
+  const CustomTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const point = payload[0].payload;
+      return (
+        <div className="bg-white px-4 py-3 shadow-lg rounded-lg border border-gray-100">
+          <p className="font-semibold text-gray-900">{point.label}</p>
+          <p className="mt-1 text-sm text-gray-600">{point.detail}</p>
+          <p className="mt-2 text-sm font-semibold text-gray-900">
+            {formatCurrency(point.value)}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Insurance Gap Analysis</CardTitle>
+        <CardDescription>
+          A visual breakdown of the protection gap behind the FIRE summary card
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data}
+                layout="vertical"
+                margin={insuranceChartMargin}
+                barCategoryGap={18}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tickFormatter={(value) => formatCompactNumber(value)}
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={10}
+                  allowDecimals={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="label"
+                  width={140}
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={10}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="value" radius={[0, 12, 12, 0]} maxBarSize={32}>
+                  {data.map((entry) => (
+                    <Cell key={entry.label} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="grid gap-3 content-start sm:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-700">
+                Cover Rule
+              </p>
+              <p className="mt-2 text-2xl font-bold text-blue-950">
+                {insuranceGap?.incomeMultiple ?? 10}x income
+              </p>
+              <p className="mt-1 text-sm text-blue-800">
+                {formatCurrency(recommendedLifeCover)} suggested life cover target
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-700">
+                Current Buffer
+              </p>
+              <p className="mt-2 text-2xl font-bold text-emerald-950">
+                {formatCompactNumber(currentAssetBuffer)}
+              </p>
+              <p className="mt-1 text-sm text-emerald-800">
+                About {coverageRatioPct.toFixed(1)}% of the target cover is already cushioned by
+                current investments
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-orange-700">
+                Runway
+              </p>
+              <p className="mt-2 text-2xl font-bold text-orange-950">
+                {expenseRunwayMonths.toFixed(1)} months
+              </p>
+              <p className="mt-1 text-sm text-orange-800">
+                Current assets can fund about {expenseRunwayMonths.toFixed(1)} months of today&apos;s
+                expenses at the current burn rate
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(240px,0.65fr)]">
+          <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500">
+              Formula Used
+            </p>
+            <p className="mt-2 text-sm leading-6 text-gray-700">
+              {insuranceGap?.formula ?? 'Insurance gap formula unavailable.'}
+            </p>
+            <p className="mt-2 text-sm font-semibold text-gray-900">
+              Exact gap: {exactEquation}
+            </p>
+            <p className="mt-2 text-sm text-gray-500">
+              This planner currently treats your existing investments as the family buffer because
+              the form does not yet capture current term-life cover separately.
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              The summary card uses compact rounding, so {formatCurrency(totalGap)} appears as{' '}
+              {formatCompactNumber(totalGap)}.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-purple-100 bg-purple-50/70 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-purple-700">
+              Health Cover Note
+            </p>
+            <p className="mt-2 text-sm leading-6 text-purple-900">
+              {insuranceGap?.healthCoverRecommendation ?? 'Health cover guidance unavailable.'}
+            </p>
+          </div>
         </div>
       </CardContent>
     </Card>

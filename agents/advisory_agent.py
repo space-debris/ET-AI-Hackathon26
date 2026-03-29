@@ -966,16 +966,43 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
             f"the target corpus is unlikely to be reached before age {config.LIFE_EXPECTANCY}."
         )
 
-    @staticmethod
-    def _estimate_insurance_gap(profile: UserFinancialProfile, existing_corpus: float) -> Dict[str, Any]:
-        life_cover_gap = max(profile.annual_income * 10 - existing_corpus, 0.0)
+    def _estimate_insurance_gap(
+        self,
+        profile: UserFinancialProfile,
+        existing_corpus: float,
+    ) -> Dict[str, Any]:
+        income_multiple = 10
+        recommended_life_cover = max(profile.annual_income * income_multiple, 0.0)
+        current_asset_buffer = max(existing_corpus, 0.0)
+        life_cover_gap = max(recommended_life_cover - current_asset_buffer, 0.0)
+        expense_runway_months = (
+            current_asset_buffer / profile.monthly_expenses
+            if profile.monthly_expenses > 0
+            else 0.0
+        )
+        coverage_ratio_pct = (
+            (current_asset_buffer / recommended_life_cover) * 100
+            if recommended_life_cover > 0
+            else 0.0
+        )
         health_cover_recommendation = "Maintain at least a ₹10L family floater health policy."
         return {
             "total_gap": round(life_cover_gap, 2),
             "life_cover_gap": round(life_cover_gap, 2),
+            "recommended_life_cover": round(recommended_life_cover, 2),
+            "current_asset_buffer": round(current_asset_buffer, 2),
+            "income_multiple": income_multiple,
+            "expense_runway_months": round(expense_runway_months, 1),
+            "coverage_ratio_pct": round(coverage_ratio_pct, 1),
+            "formula": (
+                f"{income_multiple}x annual income "
+                f"({self._format_inr(recommended_life_cover)}) minus current investment buffer "
+                f"({self._format_inr(current_asset_buffer)})"
+            ),
             "health_cover_recommendation": health_cover_recommendation,
             "summary": (
-                f"Estimated life cover gap: ₹{life_cover_gap:,.0f}. "
+                f"Estimated protection gap: ₹{life_cover_gap:,.0f} "
+                f"using a {income_multiple}x income rule and the current investment buffer as the available family cushion. "
                 f"{health_cover_recommendation}"
             ),
         }

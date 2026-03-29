@@ -595,6 +595,28 @@ class TestSchemaModels:
         )
         assert first_mix == pytest.approx(100.0, abs=0.2)
 
+    def test_fire_plan_includes_insurance_gap_breakdown(self, advisory_agent):
+        profile = UserFinancialProfile(
+            age=34,
+            annual_income=2400000,
+            monthly_expenses=80000,
+            existing_investments={"MF": 1800000, "PPF": 600000},
+            target_retirement_age=50,
+            target_monthly_corpus=150000,
+            risk_profile=RiskProfile.MODERATE,
+        )
+
+        fire_plan = advisory_agent.generate_fire_plan(profile)
+
+        assert fire_plan.insurance_gap["recommended_life_cover"] == pytest.approx(24000000.0)
+        assert fire_plan.insurance_gap["current_asset_buffer"] == pytest.approx(2400000.0)
+        assert fire_plan.insurance_gap["life_cover_gap"] == pytest.approx(21600000.0)
+        assert fire_plan.insurance_gap["total_gap"] == pytest.approx(21600000.0)
+        assert fire_plan.insurance_gap["income_multiple"] == 10
+        assert fire_plan.insurance_gap["expense_runway_months"] == pytest.approx(30.0)
+        assert fire_plan.insurance_gap["coverage_ratio_pct"] == pytest.approx(10.0)
+        assert "10x annual income" in fire_plan.insurance_gap["formula"]
+
 
 # =============================================================================
 # LangGraph Node Function Tests (mocked LLM)

@@ -201,6 +201,14 @@ const normalizeInsuranceGap = (insuranceGap) => {
   if (typeof insuranceGap === 'number') {
     return {
       totalGap: insuranceGap,
+      lifeCoverGap: insuranceGap,
+      recommendedLifeCover: null,
+      currentAssetBuffer: null,
+      incomeMultiple: null,
+      expenseRunwayMonths: null,
+      coverageRatioPct: null,
+      formula: null,
+      healthCoverRecommendation: null,
       summary: `Additional cover needed: ₹${insuranceGap.toLocaleString('en-IN')}`,
     };
   }
@@ -213,6 +221,41 @@ const normalizeInsuranceGap = (insuranceGap) => {
       insuranceGap.cover_gap ??
       insuranceGap.life_cover_gap ??
       0,
+    lifeCoverGap:
+      insuranceGap.lifeCoverGap ??
+      insuranceGap.life_cover_gap ??
+      insuranceGap.totalGap ??
+      insuranceGap.total_gap ??
+      insuranceGap.coverGap ??
+      insuranceGap.cover_gap ??
+      0,
+    recommendedLifeCover:
+      insuranceGap.recommendedLifeCover ??
+      insuranceGap.recommended_life_cover ??
+      null,
+    currentAssetBuffer:
+      insuranceGap.currentAssetBuffer ??
+      insuranceGap.current_asset_buffer ??
+      null,
+    incomeMultiple:
+      insuranceGap.incomeMultiple ??
+      insuranceGap.income_multiple ??
+      null,
+    expenseRunwayMonths:
+      insuranceGap.expenseRunwayMonths ??
+      insuranceGap.expense_runway_months ??
+      null,
+    coverageRatioPct:
+      insuranceGap.coverageRatioPct ??
+      insuranceGap.coverage_ratio_pct ??
+      null,
+    formula:
+      insuranceGap.formula ??
+      null,
+    healthCoverRecommendation:
+      insuranceGap.healthCoverRecommendation ??
+      insuranceGap.health_cover_recommendation ??
+      null,
     summary:
       insuranceGap.summary ??
       insuranceGap.notes ??
@@ -542,13 +585,32 @@ export const fireApi = {
   async generatePlan(profile) {
     if (DEMO_MODE_ENABLED) {
       await simulateDelay(1500);
+      const recommendedLifeCover = (profile?.annualIncome ?? 0) * 10;
+      const currentAssetBuffer = profile?.existingInvestments ?? 0;
+      const totalGap = Math.max(recommendedLifeCover - currentAssetBuffer, 0);
       return normalizeFirePlan({
         milestones: MOCK_FIRE_MILESTONES,
         summary: {
           targetCorpus: 24000000,
           yearsToFire: 14,
           monthlySipRequired: 70000,
-          insuranceGap: 5000000,
+          insuranceGap: {
+            totalGap,
+            lifeCoverGap: totalGap,
+            recommendedLifeCover,
+            currentAssetBuffer,
+            incomeMultiple: 10,
+            expenseRunwayMonths:
+              profile?.monthlyExpenses > 0
+                ? Number((currentAssetBuffer / profile.monthlyExpenses).toFixed(1))
+                : 0,
+            coverageRatioPct:
+              recommendedLifeCover > 0
+                ? Number(((currentAssetBuffer / recommendedLifeCover) * 100).toFixed(1))
+                : 0,
+            formula: `10x annual income (${recommendedLifeCover.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}) minus current investment buffer (${currentAssetBuffer.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })})`,
+            healthCoverRecommendation: 'Maintain at least a ₹10L family floater health policy.',
+          },
         },
       });
     }
@@ -568,6 +630,9 @@ export const fireApi = {
     if (DEMO_MODE_ENABLED) {
       await simulateDelay(800);
       const adjustmentFactor = updatedProfile.targetRetirementAge === 55 ? 1.2 : 1;
+      const recommendedLifeCover = (updatedProfile?.annualIncome ?? 0) * 10;
+      const currentAssetBuffer = updatedProfile?.existingInvestments ?? 0;
+      const totalGap = Math.max(recommendedLifeCover - currentAssetBuffer, 0);
       return normalizeFirePlan({
         milestones: MOCK_FIRE_MILESTONES.map((m) => ({
           ...m,
@@ -577,7 +642,23 @@ export const fireApi = {
           targetCorpus: Math.round(24000000 * adjustmentFactor),
           yearsToFire: updatedProfile.targetRetirementAge - updatedProfile.age,
           monthlySipRequired: Math.round(70000 / adjustmentFactor),
-          insuranceGap: 5000000,
+          insuranceGap: {
+            totalGap,
+            lifeCoverGap: totalGap,
+            recommendedLifeCover,
+            currentAssetBuffer,
+            incomeMultiple: 10,
+            expenseRunwayMonths:
+              updatedProfile?.monthlyExpenses > 0
+                ? Number((currentAssetBuffer / updatedProfile.monthlyExpenses).toFixed(1))
+                : 0,
+            coverageRatioPct:
+              recommendedLifeCover > 0
+                ? Number(((currentAssetBuffer / recommendedLifeCover) * 100).toFixed(1))
+                : 0,
+            formula: `10x annual income (${recommendedLifeCover.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })}) minus current investment buffer (${currentAssetBuffer.toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 })})`,
+            healthCoverRecommendation: 'Maintain at least a ₹10L family floater health policy.',
+          },
         },
       });
     }
