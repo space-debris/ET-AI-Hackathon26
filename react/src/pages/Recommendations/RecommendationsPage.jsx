@@ -17,7 +17,7 @@ import { Spinner } from '../../components/ui/Spinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { portfolioApi, runtimeConfig, userApi } from '../../services/api';
-import { formatCurrency, formatPercentage, getActionColor } from '../../utils/helpers';
+import { formatCurrency, formatFundDisplayName, formatPercentage, getActionColor } from '../../utils/helpers';
 import { clsx } from 'clsx';
 
 const container = {
@@ -208,10 +208,10 @@ export function RecommendationsPage() {
   const taxSafeNowCount = recommendationContexts.filter((item) => item.context.taxSafeNow).length;
   const getTargetDisplayName = (recommendation, context) => {
     if (recommendation.targetFund) {
-      return recommendation.targetFund;
+      return formatFundDisplayName(recommendation.targetFund, { includePlan: true });
     }
     if (recommendation.action === 'switch' && context?.hasDirectGap) {
-      return `Direct-plan equivalent of ${recommendation.fundName}`;
+      return `${formatFundDisplayName(recommendation.fundName)} (Direct Plan)`;
     }
     return null;
   };
@@ -220,15 +220,15 @@ export function RecommendationsPage() {
     const targetDisplayName = getTargetDisplayName(recommendation, context);
     if (recommendation.action === 'switch' && recommendation.targetFund) {
       if (context.hasStcgCaution) {
-        return `Hold new money back from ${recommendation.fundName} for now and review ${targetDisplayName} once the one-year window clears if you want to avoid STCG.`;
+        return `Hold new money back from ${formatFundDisplayName(recommendation.fundName)} for now and review ${targetDisplayName} once the one-year window clears if you want to avoid STCG.`;
       }
       return `Review the direct alternative ${targetDisplayName} before making the switch.`;
     }
     if (recommendation.action === 'switch' && targetDisplayName) {
       if (context.hasStcgCaution) {
-        return `Hold new money back from ${recommendation.fundName} for now and review the ${targetDisplayName} once the one-year window clears if you want to avoid STCG.`;
+        return `Hold new money back from ${formatFundDisplayName(recommendation.fundName)} for now and review ${targetDisplayName} once the one-year window clears if you want to avoid STCG.`;
       }
-      return `Review the ${targetDisplayName} before making the switch.`;
+      return `Review ${targetDisplayName} before making the switch.`;
     }
     if (recommendation.action === 'reduce') {
       if (context.hasStcgCaution) {
@@ -391,7 +391,7 @@ export function RecommendationsPage() {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-semibold text-gray-900">{recommendation.fundName}</h3>
+                      <h3 className="font-semibold text-gray-900">{formatFundDisplayName(recommendation.fundName)}</h3>
                       <Badge variant={getActionColor(recommendation.action)}>
                         {recommendation.action.toUpperCase()}
                         {recommendation.percentage ? ` ${recommendation.percentage}%` : ''}
@@ -480,7 +480,7 @@ export function RecommendationsPage() {
                       <div className="mt-3 space-y-2 text-sm text-slate-700">
                         <p>
                           <span className="font-medium text-slate-900">Fund:</span>{' '}
-                          {recommendation.fundName}
+                          {formatFundDisplayName(recommendation.fundName)}
                         </p>
                         <p>
                           <span className="font-medium text-slate-900">Suggested action:</span>{' '}
@@ -595,7 +595,7 @@ export function RecommendationsPage() {
                       <li key={idx} className="flex items-center gap-2 text-sm">
                         <div className="w-2 h-2 bg-blue-500 rounded-full" />
                         <span>
-                          Switch {item.fundName} to {getTargetDisplayName(item, getRecommendationContext(item)) || 'the direct-plan equivalent'} and review the tax note before execution.
+                          Switch {formatFundDisplayName(item.fundName)} to {getTargetDisplayName(item, getRecommendationContext(item)) || 'the direct-plan equivalent'} and review the tax note before execution.
                         </span>
                       </li>
                     ))}
@@ -605,7 +605,7 @@ export function RecommendationsPage() {
                       <li key={idx} className="flex items-center gap-2 text-sm">
                         <div className="w-2 h-2 bg-amber-500 rounded-full" />
                         <span>
-                          Reduce {item.fundName}
+                          Reduce {formatFundDisplayName(item.fundName)}
                           {item.percentage ? ` by ${item.percentage}%` : ''} with the tax timing in mind.
                         </span>
                       </li>

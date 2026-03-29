@@ -71,6 +71,68 @@ export function formatPercentagePoints(value, decimals = 1) {
   return `${Number(value).toFixed(decimals)}%`;
 }
 
+function parseFundNameParts(fundName) {
+  const normalized = String(fundName || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return { baseName: '', planLabel: null, optionLabel: null };
+  }
+
+  const planLabel = /direct plan/i.test(normalized)
+    ? 'Direct Plan'
+    : /\bdirect\b/i.test(normalized)
+      ? 'Direct'
+      : /regular plan/i.test(normalized)
+        ? 'Regular Plan'
+        : /\bregular\b/i.test(normalized)
+          ? 'Regular'
+          : null;
+  const optionLabel = /idcw(?:\s+payout)?(?:\s+reinvestment)?/i.test(normalized)
+    ? 'IDCW'
+    : /\bgrowth\b/i.test(normalized)
+      ? 'Growth'
+      : null;
+
+  let baseName = normalized
+    .replace(/\s*-\s*(regular|direct)\s+plan\s*-\s*(growth|idcw(?:\s+payout)?(?:\s+reinvestment)?)$/i, '')
+    .replace(/\s*-\s*(regular|direct)\s+(growth|idcw(?:\s+payout)?(?:\s+reinvestment)?)$/i, '')
+    .replace(/\s*-\s*(regular|direct)\s+plan$/i, '')
+    .replace(/\s*-\s*(regular|direct)$/i, '')
+    .replace(/\s*-\s*(growth|idcw(?:\s+payout)?(?:\s+reinvestment)?)$/i, '')
+    .replace(/\s+(regular|direct)\s+plan\s+(growth|idcw(?:\s+payout)?(?:\s+reinvestment)?)$/i, '')
+    .replace(/\s+(regular|direct)\s+(growth|idcw(?:\s+payout)?(?:\s+reinvestment)?)$/i, '')
+    .replace(/\s+(regular|direct)\s+plan$/i, '')
+    .replace(/\s+(regular|direct)$/i, '')
+    .replace(/\s+(growth|idcw(?:\s+payout)?(?:\s+reinvestment)?)$/i, '')
+    .replace(/\s*-\s*$/, '')
+    .trim();
+
+  if (!baseName) {
+    baseName = normalized;
+  }
+
+  return { baseName, planLabel, optionLabel };
+}
+
+export function formatFundDisplayName(
+  fundName,
+  { includePlan = false, includeOption = false } = {}
+) {
+  const { baseName, planLabel, optionLabel } = parseFundNameParts(fundName);
+  if (!baseName) {
+    return '';
+  }
+
+  const suffixParts = [];
+  if (includePlan && planLabel) {
+    suffixParts.push(planLabel);
+  }
+  if (includeOption && optionLabel) {
+    suffixParts.push(optionLabel);
+  }
+
+  return suffixParts.length ? `${baseName} (${suffixParts.join(', ')})` : baseName;
+}
+
 export function humanizeLabel(value) {
   if (!value) {
     return '';

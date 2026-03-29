@@ -1,5 +1,5 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
-import { formatCurrency, formatPercentagePoints } from '../../utils/helpers';
+import { formatCurrency, formatFundDisplayName, formatPercentagePoints } from '../../utils/helpers';
 
 export function OverlapHeatmap({
   overlapMatrix,
@@ -95,7 +95,7 @@ export function OverlapHeatmap({
         ((left.currentValue || 0) * (left.expenseRatio - left.directExpenseRatio))
     )[0] || null;
   const taxAwareMove = stcgSafeCandidate
-    ? `Start with ${stcgSafeCandidate.fundName}: repeated names include ${(overlapSignalsByFund[stcgSafeCandidate.fundName] || []).slice(0, 3).join(', ')} and the holding looks outside the STCG window.${
+    ? `Start with ${formatFundDisplayName(stcgSafeCandidate.fundName)}: repeated names include ${(overlapSignalsByFund[stcgSafeCandidate.fundName] || []).slice(0, 3).join(', ')} and the holding looks outside the STCG window.${
         directPlanCandidate?.fundName === stcgSafeCandidate.fundName
           ? ` A switch to direct could also save about ${formatCurrency(stcgSafeCandidate.currentValue * (stcgSafeCandidate.expenseRatio - stcgSafeCandidate.directExpenseRatio))} a year.`
           : ''
@@ -104,11 +104,11 @@ export function OverlapHeatmap({
       ? 'No obvious long-held overlap candidate is visible yet. Redirect new SIPs away from the repeated names first, then review trims once the short-term tax window clears.'
       : 'No tax-aware overlap action is needed right now.';
   const stcgDeferralNote = stcgDeferredCandidate
-    ? `Avoid trimming ${stcgDeferredCandidate.fundName} immediately if you want to avoid STCG. It still overlaps on ${(overlapSignalsByFund[stcgDeferredCandidate.fundName] || []).slice(0, 2).join(', ')} but looks to be inside the one-year holding window.`
+    ? `Avoid trimming ${formatFundDisplayName(stcgDeferredCandidate.fundName)} immediately if you want to avoid STCG. It still overlaps on ${(overlapSignalsByFund[stcgDeferredCandidate.fundName] || []).slice(0, 2).join(', ')} but looks to be inside the one-year holding window.`
     : stcgSafeCandidate
-      ? `No immediate STCG deferral is needed for ${stcgSafeCandidate.fundName}. It looks outside the one-year holding window, so you can focus on overlap and direct-plan savings instead of waiting for tax timing.`
+      ? `No immediate STCG deferral is needed for ${formatFundDisplayName(stcgSafeCandidate.fundName)}. It looks outside the one-year holding window, so you can focus on overlap and direct-plan savings instead of waiting for tax timing.`
       : directPlanCandidate
-        ? `${directPlanCandidate.fundName} still has a regular-plan cost gap of ${formatPercentagePoints((directPlanCandidate.expenseRatio - directPlanCandidate.directExpenseRatio) * 100, 2)} versus direct, but no clear STCG holding-period blocker is visible in the top overlap candidate right now.`
+        ? `${formatFundDisplayName(directPlanCandidate.fundName)} still has a regular-plan cost gap of ${formatPercentagePoints((directPlanCandidate.expenseRatio - directPlanCandidate.directExpenseRatio) * 100, 2)} versus direct, but no clear STCG holding-period blocker is visible in the top overlap candidate right now.`
       : 'No near-term STCG deferral signal is obvious from the current portfolio snapshot.';
 
   const getCellStyle = (weight) => {

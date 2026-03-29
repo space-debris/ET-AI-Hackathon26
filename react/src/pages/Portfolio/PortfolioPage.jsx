@@ -19,6 +19,7 @@ import { portfolioApi, reportApi, runtimeConfig, userApi } from '../../services/
 import {
   formatCurrency,
   formatPercentage,
+  formatFundDisplayName,
   calculateReturns,
   getCategoryLabel,
   getCategoryColor,
@@ -275,7 +276,7 @@ export function PortfolioPage() {
             </p>
             <p className="text-sm leading-6 text-slate-700">
               {directPlanOpportunities.length
-                ? `${directPlanOpportunities.length} regular holding(s) still cost more than their direct-plan equivalents. Highest drag: ${topExpenseOpportunity.fundName} at about ${formatCurrency(topExpenseOpportunity.annualDrag)} per year.`
+                ? `${directPlanOpportunities.length} regular holding(s) still cost more than their direct-plan equivalents. Highest drag: ${formatFundDisplayName(topExpenseOpportunity.fundName)} at about ${formatCurrency(topExpenseOpportunity.annualDrag)} per year.`
                 : 'No regular-plan expense gap is obvious in the current portfolio snapshot.'}
             </p>
           </CardContent>
@@ -287,11 +288,11 @@ export function PortfolioPage() {
               Tax-Aware Rebalancing
             </p>
             <p className="text-2xl font-bold text-slate-900">
-              {taxAwareOverlapCandidate ? taxAwareOverlapCandidate.fundName.split(' ').slice(0, 2).join(' ') : 'Review'}
+              {taxAwareOverlapCandidate ? formatFundDisplayName(taxAwareOverlapCandidate.fundName) : 'Review'}
             </p>
             <p className="text-sm leading-6 text-slate-700">
               {taxAwareOverlapCandidate
-                ? `Start with ${taxAwareOverlapCandidate.fundName}: repeated names include ${(overlapSignalsByFund[taxAwareOverlapCandidate.fundName] || []).slice(0, 3).join(', ')} and the holding appears outside the STCG window.`
+                ? `Start with ${formatFundDisplayName(taxAwareOverlapCandidate.fundName)}: repeated names include ${(overlapSignalsByFund[taxAwareOverlapCandidate.fundName] || []).slice(0, 3).join(', ')} and the holding appears outside the STCG window.`
                 : stcgDeferredOverlapCount
                   ? `Repeated positions are visible, but ${stcgDeferredOverlapCount} overlap-heavy holding(s) still appear to be inside the STCG window. Redirect fresh SIPs before trimming if you want to stay tax-aware.`
                   : 'No overlap-driven tax-timing issue is obvious from the latest analytics.'}
