@@ -31,7 +31,7 @@ export function Card({
     <div
       className={clsx(
         // Base styles
-        'relative rounded-2xl border transition-all duration-200',
+        'relative min-w-0 rounded-2xl border transition-all duration-200',
         'shadow-sm',
         // Variant styles
         cardVariants[variant],

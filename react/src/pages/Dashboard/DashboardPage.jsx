@@ -9,10 +9,12 @@ import {
   Activity,
   Upload,
   ArrowRight,
+  Users,
   Wallet,
   Target,
   ChevronRight,
   Zap,
+  Sparkles,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -131,6 +133,27 @@ export function DashboardPage() {
       gradient: 'from-orange-500 to-red-500',
     },
     {
+      title: 'AI Path Planner',
+      description: 'Create a month-by-month roadmap across emergency, tax, cover, and life goals',
+      icon: Target,
+      path: '/path-planner',
+      gradient: 'from-sky-500 to-blue-600',
+    },
+    {
+      title: 'Life Event Advisor',
+      description: 'Model bonus, inheritance, marriage, or job-switch decisions',
+      icon: Sparkles,
+      path: '/life-events',
+      gradient: 'from-pink-500 to-rose-500',
+    },
+    {
+      title: 'Couple Planner',
+      description: 'Split shared goals, tax headroom, and protection across both partners',
+      icon: Users,
+      path: '/couple-planner',
+      gradient: 'from-violet-500 to-indigo-600',
+    },
+    {
       title: 'Tax Optimizer',
       description: 'Compare old vs new regime and spot savings',
       icon: Calculator,
@@ -196,7 +219,7 @@ export function DashboardPage() {
         {
           title: 'Health Focus Area',
           body: healthDimensions.length
-            ? `${healthDimensions[0].dimension} is scoring ${healthDimensions[0].score}/100 in the current analysis.`
+            ? `${humanizeLabel(healthDimensions[0].dimension)} is scoring ${healthDimensions[0].score}/100 in the current analysis.`
             : 'No health-score payload is available yet.',
           tone: 'emerald',
         },
@@ -271,7 +294,7 @@ export function DashboardPage() {
           <h2 className="text-xl font-bold text-gray-900 tracking-tight">Quick Actions</h2>
           <span className="text-sm text-gray-400">Choose how you want to get started</span>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {quickActions.map((action, idx) => (
             <Link key={idx} to={action.path} className="h-full">
               <motion.div

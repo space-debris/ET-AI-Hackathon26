@@ -53,8 +53,8 @@ export function XIRRBarChart({ fundWiseXirr, overallXirr, title = 'Fund-wise XIR
         </div>
       </CardHeader>
       <CardContent>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-80 min-w-0 min-h-[20rem]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart
               data={data}
               layout="vertical"
@@ -127,8 +127,8 @@ export function ReturnsComparisonChart({ holdings }) {
         <CardTitle>Invested vs Current Value</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-80 min-w-0 min-h-[20rem]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis

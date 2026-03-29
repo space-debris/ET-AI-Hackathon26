@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 from agents.advisory_agent import AdvisoryAgent
 from agents.analytics_agent import AnalyticsAgent
 from agents.compliance_agent import ComplianceAgent
+from agents.form16_agent import Form16Agent
+from agents.life_event_agent import LifeEventAdvisorAgent
 from agents.orchestrator import FinSageOrchestrator
 from agents.parser_agent import ParserAgent
 from frontend.utils.report_generator import generate_pdf
@@ -110,6 +112,7 @@ class SessionStore:
                 "upload_filename": None,
                 "user_profile": None,
                 "user_profile_signature": None,
+                "form16_context": None,
             }
             self._sessions[session_id] = session
         return session
@@ -251,6 +254,10 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
                 response = self._handle_tax(session, payload)
             elif method == "POST" and path == "/api/tax/optimize":
                 response = self._handle_tax_optimizations(session, payload)
+            elif method == "POST" and path == "/api/form16/upload":
+                response = self._handle_form16_upload(session, payload)
+            elif method == "POST" and path == "/api/life-events/chat":
+                response = self._handle_life_event_chat(session, payload)
             elif method == "GET" and path == "/api/health/score":
                 response = self._handle_health(session)
             elif method == "GET" and path == "/api/user/profile":
@@ -324,8 +331,12 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
         return session_id, self.server.sessions.get(session_id)
 
     def _profile_from_payload(self, payload: dict[str, Any]) -> UserFinancialProfile:
+        normalized_payload = dict(payload or {})
+        for field in ("target_retirement_age", "target_monthly_corpus", "risk_profile", "metro_city"):
+            if normalized_payload.get(field) is None:
+                normalized_payload.pop(field, None)
         try:
-            return UserFinancialProfile(**payload)
+            return UserFinancialProfile(**normalized_payload)
         except Exception as exc:
             raise ApiError(HTTPStatus.BAD_REQUEST, f"Invalid profile payload: {exc}") from exc
 
@@ -399,6 +410,51 @@ class FinSageRequestHandler(BaseHTTPRequestHandler):
             "suggestions": tax_analysis.additional_instruments,
             "totalPotentialSaving": tax_analysis.savings_amount,
         }
+
+    def _handle_form16_upload(self, session: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+        file_item = payload.get("file")
+        if not file_item:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "A Form 16 file is required for upload.")
+
+        try:
+            parsed = Form16Agent().parse_upload(file_item["content"], file_item["filename"])
+        except ValueError as exc:
+            raise ApiError(HTTPStatus.UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+        session["form16_context"] = parsed
+        return {
+            "success": True,
+            "message": parsed["summary"],
+            "form16": parsed,
+        }
+
+    def _handle_life_event_chat(self, session: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+        question = (payload.get("question") or "").strip()
+        if not question:
+            raise ApiError(HTTPStatus.BAD_REQUEST, "A question is required for the life-event advisor.")
+
+        profile_payload = payload.get("profile") or session.get("user_profile")
+        if not profile_payload:
+            raise ApiError(
+                HTTPStatus.BAD_REQUEST,
+                "Provide a financial profile before asking the life-event advisor.",
+            )
+
+        profile = (
+            profile_payload
+            if isinstance(profile_payload, UserFinancialProfile)
+            else self._profile_from_payload(profile_payload)
+        )
+        session["user_profile"] = profile
+        session["user_profile_signature"] = _profile_signature(profile)
+
+        scenario = payload.get("scenario") or {}
+        return LifeEventAdvisorAgent().chat(
+            question=question,
+            profile=profile,
+            scenario=scenario,
+            uploaded_context=session.get("form16_context"),
+        )
 
     def _handle_health(self, session: dict[str, Any]) -> dict[str, Any]:
         report = session.get("report")

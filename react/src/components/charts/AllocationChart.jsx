@@ -49,8 +49,8 @@ export function AllocationPieChart({ holdings, title = 'Portfolio Allocation' })
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-80 min-w-0 min-h-[20rem]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <PieChart>
               <Pie
                 data={categoryData}
@@ -114,8 +114,8 @@ export function FundAllocationPieChart({ holdings, title = 'Fund-wise Allocation
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-80 min-w-0 min-h-[20rem]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <PieChart>
               <Pie
                 data={data}

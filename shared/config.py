@@ -21,6 +21,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
 CHROMA_PERSIST_DIR = str(DATA_DIR / "chromadb")
 FUND_FACTSHEETS_DIR = str(DATA_DIR / "fund_factsheets")
+FORM16_KNOWLEDGE_DIR = str(DATA_DIR / "form16_knowledge")
 
 # =============================================================================
 # LLM Configuration

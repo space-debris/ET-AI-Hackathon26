@@ -440,6 +440,12 @@ const toExistingInvestmentsMap = (existingInvestments) => {
   return {};
 };
 
+const assignIfPresent = (target, value, key) => {
+  if (value !== undefined && value !== null) {
+    target[key] = value;
+  }
+};
+
 const toFrontendProfile = (profile = {}) => ({
   age: profile.age ?? 0,
   annualIncome: profile.annualIncome ?? profile.annual_income ?? 0,
@@ -463,6 +469,46 @@ const toFrontendProfile = (profile = {}) => ({
   otherDeductions: profile.otherDeductions ?? profile.other_deductions ?? 0,
 });
 
+const toPartialFrontendProfile = (profile = {}) => {
+  const normalized = {};
+  assignIfPresent(
+    normalized,
+    profile.annualIncome ?? profile.annual_income,
+    'annualIncome'
+  );
+  assignIfPresent(
+    normalized,
+    profile.baseSalary ?? profile.base_salary,
+    'baseSalary'
+  );
+  assignIfPresent(
+    normalized,
+    profile.hraReceived ?? profile.hra_received ?? profile.hra,
+    'hraReceived'
+  );
+  assignIfPresent(
+    normalized,
+    profile.section80C ?? profile.section_80c,
+    'section80C'
+  );
+  assignIfPresent(
+    normalized,
+    profile.npsContribution ?? profile.nps_contribution,
+    'npsContribution'
+  );
+  assignIfPresent(
+    normalized,
+    profile.homeLoanInterest ?? profile.home_loan_interest,
+    'homeLoanInterest'
+  );
+  assignIfPresent(
+    normalized,
+    profile.medicalInsurancePremium ?? profile.medical_insurance_premium,
+    'medicalInsurancePremium'
+  );
+  return normalized;
+};
+
 const toBackendProfile = (profile = {}) => ({
   age: profile.age,
   annual_income: profile.annualIncome ?? profile.annual_income ?? 0,
@@ -471,9 +517,9 @@ const toBackendProfile = (profile = {}) => ({
     profile.existingInvestments ?? profile.existing_investments
   ),
   target_retirement_age:
-    profile.targetRetirementAge ?? profile.target_retirement_age ?? null,
+    profile.targetRetirementAge ?? profile.target_retirement_age ?? 60,
   target_monthly_corpus:
-    profile.targetMonthlyCorpus ?? profile.target_monthly_corpus ?? null,
+    profile.targetMonthlyCorpus ?? profile.target_monthly_corpus ?? 0,
   risk_profile: profile.riskProfile ?? profile.risk_profile ?? 'moderate',
   base_salary: profile.baseSalary ?? profile.base_salary ?? null,
   hra_received: profile.hraReceived ?? profile.hra_received ?? profile.hra ?? null,
@@ -501,6 +547,111 @@ const withApiErrorContext = (message, error) => {
   wrappedError.cause = error;
   wrappedError.code = error?.code ?? error?.response?.status ?? 'API_ERROR';
   return wrappedError;
+};
+
+const buildDemoLifeEventChatResponse = ({ question, profile, scenario }) => {
+  const eventAmount = Number(scenario?.eventAmount ?? 0);
+  const monthlyExpenses = Number(profile?.monthlyExpenses ?? 0);
+  const currentReserve = Number(scenario?.currentReserve ?? 0);
+  const reserveTarget = monthlyExpenses * 6;
+  const reserveShortfall = Math.max(reserveTarget - currentReserve, 0);
+  const taxReserve = eventAmount * 0.3;
+
+  return {
+    answer: [
+      'What the document shows:',
+      '- The bundled sample Form 16 shows gross salary of ₹24,00,000 with basic salary ₹18,00,000, HRA ₹3,60,000, and ₹2,40,000 of other taxable allowances.',
+      '- The same sample reflects 80C ₹1,50,000, NPS ₹50,000, and only ₹40,000 of home-loan interest in payroll.',
+      '',
+      'What to do now:',
+      `- Keep about ₹${taxReserve.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ring-fenced first, then close the reserve gap of ₹${reserveShortfall.toLocaleString('en-IN', { maximumFractionDigits: 0 })} before long-term deployment.`,
+      '',
+      'What to verify:',
+      '- Confirm whether the event cash is already reflected in salary income and TDS before treating it as fully post-tax money.',
+    ].join('\n'),
+    highlights: [
+      'Sample Form 16 gross salary: ₹24,00,000',
+      `Suggested tax reserve: ₹${taxReserve.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+      'Check whether payroll already captured the event in salary and TDS.',
+    ],
+    sources: [
+      {
+        title: 'Sample Form 16 FY 2025-26',
+        section: 'Part B - Salary Breakdown',
+        excerpt: 'Gross salary paid during the year: Rs 24,00,000. Basic salary: Rs 18,00,000. House rent allowance received: Rs 3,60,000.',
+        source_path: 'data/form16_knowledge/sample_form16_fy2025_26.md',
+        score: 18,
+      },
+      {
+        title: 'Form 16 Life Event Playbook',
+        section: 'Bonus and Variable Pay',
+        excerpt: 'When a salaried user receives a bonus, the first document check is whether the bonus has already been included in salary income and TDS.',
+        source_path: 'data/form16_knowledge/life_event_form16_playbook.md',
+        score: 16,
+      },
+    ],
+    retrievedChunks: 2,
+    knowledgeLabel: 'Bundled sample Form 16 FY 2025-26 + life event playbook',
+    eventLabel: scenario?.eventType ?? 'bonus',
+    metrics: {
+      reserveTarget,
+      reserveShortfall,
+      taxReserve,
+      investableAfterSafety: Math.max(eventAmount - taxReserve - reserveShortfall, 0),
+    },
+    question,
+  };
+};
+
+const buildDemoForm16UploadResponse = (fileName = 'sample_form16_fy2025_26.md') => ({
+  filename: fileName,
+  documentLabel: `Uploaded Form 16 (${fileName})`,
+  knowledgeLabel: `Uploaded Form 16 (${fileName}) + life event playbook`,
+  summary: 'Parsed salary, deduction, and TDS fields from the uploaded Form 16.',
+  parsedFieldCount: 8,
+  sourceCount: 4,
+  extractedFields: [
+    { key: 'gross_salary', label: 'Gross Salary', amount: 2400000 },
+    { key: 'base_salary', label: 'Basic Salary', amount: 1800000 },
+    { key: 'hra_received', label: 'HRA Received', amount: 360000 },
+    { key: 'section_80c', label: 'Section 80C', amount: 150000 },
+    { key: 'nps_contribution', label: 'NPS', amount: 50000 },
+    { key: 'home_loan_interest', label: 'Home Loan Interest', amount: 40000 },
+    { key: 'tds', label: 'TDS', amount: 292500 },
+  ],
+  profileOverrides: {
+    annualIncome: 2400000,
+    baseSalary: 1800000,
+    hraReceived: 360000,
+    section80C: 150000,
+    npsContribution: 50000,
+    homeLoanInterest: 40000,
+    medicalInsurancePremium: 0,
+  },
+});
+
+const normalizeForm16Upload = (payload) => {
+  const form16 = payload?.form16 ?? payload?.data ?? payload ?? null;
+  if (!form16) {
+    return null;
+  }
+
+  return {
+    filename: form16.filename ?? '',
+    documentLabel: form16.documentLabel ?? form16.document_label ?? '',
+    knowledgeLabel: form16.knowledgeLabel ?? form16.knowledge_label ?? '',
+    summary: form16.summary ?? payload?.message ?? '',
+    parsedFieldCount: form16.parsedFieldCount ?? form16.parsed_field_count ?? 0,
+    sourceCount: form16.sourceCount ?? form16.source_count ?? 0,
+    extractedFields: (form16.extractedFields ?? form16.extracted_fields ?? []).map((item) => ({
+      key: item.key ?? '',
+      label: item.label ?? item.key ?? '',
+      amount: item.amount ?? 0,
+    })),
+    profileOverrides: toPartialFrontendProfile(
+      form16.profileOverrides ?? form16.profile_overrides ?? {}
+    ),
+  };
 };
 
 export const runtimeConfig = {
@@ -677,6 +828,25 @@ export const fireApi = {
 
 // Tax Optimizer API
 export const taxApi = {
+  async uploadForm16(file) {
+    if (DEMO_MODE_ENABLED) {
+      await simulateDelay(1000);
+      return buildDemoForm16UploadResponse(file?.name);
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await api.post('/form16/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return normalizeForm16Upload(response.data);
+    } catch (error) {
+      throw withApiErrorContext('Form 16 upload failed.', error);
+    }
+  },
+
   async compareRegimes(profile) {
     if (DEMO_MODE_ENABLED) {
       await simulateDelay(1200);
@@ -706,6 +876,63 @@ export const taxApi = {
       return response.data;
     } catch (error) {
       throw withApiErrorContext('Tax optimizations unavailable.', error);
+    }
+  },
+};
+
+export const lifeEventApi = {
+  async askAdvisor({ question, profile, scenario }) {
+    if (DEMO_MODE_ENABLED) {
+      await simulateDelay(600);
+      return buildDemoLifeEventChatResponse({ question, profile, scenario });
+    }
+
+    try {
+      const response = await api.post('/life-events/chat', {
+        question,
+        profile: toBackendProfile(profile),
+        scenario,
+      });
+      const data = response.data ?? {};
+      return {
+        answer: data.answer ?? '',
+        highlights: data.highlights ?? [],
+        sources: data.sources ?? [],
+        retrievedChunks: data.retrievedChunks ?? data.retrieved_chunks ?? 0,
+        knowledgeLabel: data.knowledgeLabel ?? data.knowledge_label ?? '',
+        eventLabel: data.eventLabel ?? data.event_label ?? '',
+        metrics: {
+          reserveTarget:
+            data.metrics?.reserveTarget ??
+            data.metrics?.reserve_target ??
+            0,
+          reserveShortfall:
+            data.metrics?.reserveShortfall ??
+            data.metrics?.reserve_shortfall ??
+            0,
+          taxReserve:
+            data.metrics?.taxReserve ??
+            data.metrics?.tax_reserve ??
+            0,
+          investableAfterSafety:
+            data.metrics?.investableAfterSafety ??
+            data.metrics?.investable_after_safety ??
+            0,
+        },
+      };
+    } catch (error) {
+      const detail = error?.response?.data?.detail ?? '';
+      if (
+        error?.response?.status === 404 &&
+        detail.toLowerCase().includes('unsupported endpoint')
+      ) {
+        const restartError = new Error(
+          'Life-event advisor route is unavailable in the running backend. Restart the API server so it loads the new /api/life-events/chat endpoint.'
+        );
+        restartError.code = 404;
+        throw restartError;
+      }
+      throw withApiErrorContext('Life-event advisor unavailable.', error);
     }
   },
 };

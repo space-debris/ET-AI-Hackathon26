@@ -33,6 +33,7 @@ desktop.ini
 
 # ChromaDB local data
 data/chromadb/
+react-frontend/
 
 # Jupyter
 .ipynb_checkpoints/

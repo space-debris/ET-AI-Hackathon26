@@ -169,11 +169,14 @@ const mergeTaxProfile = (defaults, savedProfile) => ({
 
 export function TaxOptimizerPage() {
   const [calculating, setCalculating] = useState(false);
+  const [uploadingForm16, setUploadingForm16] = useState(false);
+  const [form16Summary, setForm16Summary] = useState(null);
   const [taxData, setTaxData] = useState(null);
   const [error, setError] = useState(null);
   const autoRefreshEnabled = useRef(false);
   const hydratingProfile = useRef(true);
   const lastSyncedProfile = useRef('');
+  const form16InputRef = useRef(null);
   const [profile, setProfile] = useState(defaultTaxProfile);
 
   const handleProfileChange = (field, value) => {
@@ -188,6 +191,11 @@ export function TaxOptimizerPage() {
             : 0,
     }));
   };
+
+  const applyProfileOverrides = (currentProfile, overrides = {}) => ({
+    ...currentProfile,
+    ...overrides,
+  });
 
   useEffect(() => {
     let active = true;
@@ -263,6 +271,40 @@ export function TaxOptimizerPage() {
       setError(calculateError.message);
     } finally {
       setCalculating(false);
+    }
+  };
+
+  const handleForm16Upload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || uploadingForm16) {
+      return;
+    }
+
+    setUploadingForm16(true);
+    setError(null);
+
+    try {
+      const parsed = await taxApi.uploadForm16(file);
+      setForm16Summary(parsed);
+
+      const nextProfile = applyProfileOverrides(profile, parsed.profileOverrides);
+      setProfile(nextProfile);
+      userApi.rememberProfile(nextProfile);
+      userApi.updateProfile(nextProfile).catch(() => {
+        // Keep the local prefill even if the backend profile refresh is delayed.
+      });
+
+      const comparison = await taxApi.compareRegimes(nextProfile);
+      setTaxData(comparison);
+      writeCachedTaxComparison(nextProfile, comparison);
+      autoRefreshEnabled.current = true;
+      lastSyncedProfile.current = getProfileSignature(nextProfile);
+    } catch (uploadError) {
+      console.error('Failed to upload Form 16:', uploadError);
+      setError(uploadError.message);
+    } finally {
+      setUploadingForm16(false);
+      event.target.value = '';
     }
   };
 
@@ -386,6 +428,82 @@ export function TaxOptimizerPage() {
             variant="error"
           />
         )}
+      </motion.div>
+
+      <motion.div variants={item}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Form 16</CardTitle>
+            <CardDescription>
+              Upload a Form 16 PDF or text export to prefill salary fields, then keep using the
+              manual inputs if you want to fine-tune rent or deductions. The uploaded document is
+              also available to the Life Event Advisor in this session.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <input
+              ref={form16InputRef}
+              type="file"
+              accept=".pdf,.txt,.md"
+              className="hidden"
+              onChange={handleForm16Upload}
+            />
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-gray-900">
+                  Form 16 upload and retrieval grounding
+                </p>
+                <p className="text-sm text-gray-500">
+                  Best for pre-filling gross salary, HRA, 80C, NPS, home-loan interest, and TDS.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                icon={FileText}
+                loading={uploadingForm16}
+                onClick={() => form16InputRef.current?.click()}
+              >
+                {form16Summary ? 'Replace Form 16' : 'Upload Form 16'}
+              </Button>
+            </div>
+
+            {form16Summary && (
+              <div className="space-y-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-blue-900">
+                      {form16Summary.documentLabel || form16Summary.filename}
+                    </p>
+                    <p className="mt-1 text-sm text-blue-800">{form16Summary.summary}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="primary">
+                      {form16Summary.parsedFieldCount} fields parsed
+                    </Badge>
+                    <Badge variant="default">
+                      {form16Summary.sourceCount} retrieval chunks
+                    </Badge>
+                  </div>
+                </div>
+
+                {form16Summary.extractedFields.length > 0 && (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {form16Summary.extractedFields.slice(0, 6).map((field) => (
+                      <div key={field.key} className="rounded-xl bg-white px-4 py-3 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                          {field.label}
+                        </p>
+                        <p className="mt-2 text-lg font-semibold text-gray-900">
+                          {formatCurrency(field.amount)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </motion.div>
 
       <motion.div variants={item}>

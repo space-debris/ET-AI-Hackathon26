@@ -71,8 +71,8 @@ export function FIRETimelineChart({ milestones, targetCorpus }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-96">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-96 min-w-0 min-h-[24rem]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <AreaChart data={data} margin={timelineChartMargin}>
               <defs>
                 <linearGradient id="colorEquity" x1="0" y1="0" x2="0" y2="1">
@@ -204,8 +204,8 @@ export function SIPProgressChart({ milestones }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-64 min-w-0 min-h-[16rem]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <AreaChart data={data} margin={sipChartMargin}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis
@@ -313,8 +313,8 @@ export function InsuranceGapChart({ insuranceGap }) {
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-72 min-w-0 min-h-[18rem]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart
                 data={data}
                 layout="vertical"

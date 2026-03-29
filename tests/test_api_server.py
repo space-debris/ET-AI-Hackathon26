@@ -18,14 +18,18 @@ def _request(server, method, path, body=None, headers=None):
     return response.status, payload, session_id, content_type
 
 
-def _build_multipart(file_path: Path, field_name: str = "file"):
+def _build_multipart(
+    file_path: Path,
+    field_name: str = "file",
+    content_type: str = "application/pdf",
+):
     boundary = f"----FinSageBoundary{uuid.uuid4().hex}"
     file_bytes = file_path.read_bytes()
     parts = [
         (
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"\r\n'
-            "Content-Type: application/pdf\r\n\r\n"
+            f"Content-Type: {content_type}\r\n\r\n"
         ).encode("utf-8"),
         file_bytes,
         f"\r\n--{boundary}--\r\n".encode("utf-8"),
@@ -185,6 +189,173 @@ def test_upload_response_exposes_session_header_for_browser_clients():
         assert response.status == 200
         assert session_id
         assert expose_headers == "X-Session-Id"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_life_event_chat_endpoint_returns_grounded_sources():
+    server = FinSageHTTPServer(("127.0.0.1", 0))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        payload = {
+            "question": "I may switch jobs this year. What should I check in Form 16 first?",
+            "profile": {
+                "age": 34,
+                "annual_income": 2400000,
+                "monthly_expenses": 80000,
+                "existing_investments": {"MF": 1800000, "PPF": 600000},
+                "target_retirement_age": 50,
+                "target_monthly_corpus": 150000,
+                "risk_profile": "moderate",
+                "base_salary": 1800000,
+                "hra_received": 360000,
+                "rent_paid": 0,
+                "section_80c": 150000,
+                "nps_contribution": 50000,
+                "home_loan_interest": 40000,
+            },
+            "scenario": {
+                "eventType": "job_switch",
+                "eventAmount": 400000,
+                "currentReserve": 200000,
+                "monthsUntilEvent": 3,
+            },
+        }
+
+        status, body, _, _ = _request(
+            server,
+            "POST",
+            "/api/life-events/chat",
+            body=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+
+        data = json.loads(body.decode("utf-8"))
+        assert status == 200
+        assert data["retrieved_chunks"] >= 1
+        assert "What the document shows" in data["answer"]
+        assert any("Form 16" in source["title"] for source in data["sources"])
+        assert any("source_path" in source for source in data["sources"])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_form16_upload_endpoint_prefills_tax_fields_and_enriches_life_event_rag():
+    server = FinSageHTTPServer(("127.0.0.1", 0))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        sample_path = Path("data/form16_knowledge/sample_form16_fy2025_26.md")
+        boundary, body = _build_multipart(
+            sample_path,
+            content_type="text/markdown",
+        )
+        status, payload, session_id, _ = _request(
+            server,
+            "POST",
+            "/api/form16/upload",
+            body=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+
+        upload_data = json.loads(payload.decode("utf-8"))
+        assert status == 200
+        assert session_id
+        assert upload_data["form16"]["profile_overrides"]["annual_income"] == 2400000.0
+        assert upload_data["form16"]["profile_overrides"]["base_salary"] == 1800000.0
+        assert upload_data["form16"]["parsed_field_count"] >= 6
+
+        chat_payload = {
+            "question": "What salary and deduction picture does my uploaded Form 16 show before I use a bonus?",
+            "profile": {
+                "age": 34,
+                "annual_income": 2400000,
+                "monthly_expenses": 80000,
+                "existing_investments": {"MF": 1800000, "PPF": 600000},
+                "target_retirement_age": 50,
+                "target_monthly_corpus": 150000,
+                "risk_profile": "moderate",
+                "base_salary": 1800000,
+                "hra_received": 360000,
+                "rent_paid": 0,
+                "section_80c": 150000,
+                "nps_contribution": 50000,
+                "home_loan_interest": 40000,
+            },
+            "scenario": {
+                "eventType": "bonus",
+                "eventAmount": 600000,
+                "currentReserve": 250000,
+            },
+        }
+
+        status, payload, _, _ = _request(
+            server,
+            "POST",
+            "/api/life-events/chat",
+            body=json.dumps(chat_payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "X-Session-Id": session_id,
+            },
+        )
+
+        chat_data = json.loads(payload.decode("utf-8"))
+        assert status == 200
+        assert "Uploaded Form 16" in chat_data["knowledge_label"]
+        assert any("Uploaded Form 16" in source["title"] for source in chat_data["sources"])
+        assert "gross salary" in chat_data["answer"].lower()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def test_life_event_chat_accepts_profiles_without_fire_targets():
+    server = FinSageHTTPServer(("127.0.0.1", 0))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        payload = {
+            "question": "What should I verify in Form 16 before I deploy a bonus?",
+            "profile": {
+                "age": 34,
+                "annual_income": 2400000,
+                "monthly_expenses": 80000,
+                "existing_investments": {"MF": 1800000, "PPF": 600000},
+                "target_retirement_age": None,
+                "target_monthly_corpus": None,
+                "risk_profile": "moderate",
+            },
+            "scenario": {
+                "eventType": "bonus",
+                "eventAmount": 600000,
+                "currentReserve": 250000,
+                "monthsUntilEvent": 1,
+            },
+        }
+
+        status, body, _, _ = _request(
+            server,
+            "POST",
+            "/api/life-events/chat",
+            body=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+
+        data = json.loads(body.decode("utf-8"))
+        assert status == 200
+        assert data["event_label"] == "Bonus"
+        assert data["metrics"]["reserve_target"] > 0
+        assert "what the document shows" in data["answer"].lower()
     finally:
         server.shutdown()
         server.server_close()

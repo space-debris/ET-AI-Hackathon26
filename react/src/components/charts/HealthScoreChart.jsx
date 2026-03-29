@@ -62,8 +62,8 @@ export function HealthScoreRadar({ dimensions, overallScore }) {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-80 min-w-0 min-h-[20rem]">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
               <PolarGrid stroke="#e5e7eb" />
               <PolarAngleAxis

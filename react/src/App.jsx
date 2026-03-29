@@ -5,6 +5,9 @@ import {
   UploadPage,
   PortfolioPage,
   FIREPlannerPage,
+  PathPlannerPage,
+  LifeEventAdvisorPage,
+  CoupleMoneyPlannerPage,
   TaxOptimizerPage,
   HealthScorePage,
   RecommendationsPage,
@@ -21,6 +24,9 @@ function App() {
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/fire-planner" element={<FIREPlannerPage />} />
+          <Route path="/path-planner" element={<PathPlannerPage />} />
+          <Route path="/life-events" element={<LifeEventAdvisorPage />} />
+          <Route path="/couple-planner" element={<CoupleMoneyPlannerPage />} />
           <Route path="/tax-optimizer" element={<TaxOptimizerPage />} />
           <Route path="/health-score" element={<HealthScorePage />} />
           <Route path="/recommendations" element={<RecommendationsPage />} />

@@ -1,0 +1,1 @@
+export { CoupleMoneyPlannerPage } from './CoupleMoneyPlannerPage';
