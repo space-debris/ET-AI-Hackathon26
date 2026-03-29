@@ -150,6 +150,47 @@ export function PortfolioPage() {
 
   const absoluteReturns = portfolio.totalCurrentValue - portfolio.totalInvested;
   const returnsPct = calculateReturns(portfolio.totalInvested, portfolio.totalCurrentValue);
+  const overlapSignalsByFund = Object.entries(portfolio.overlapMatrix ?? {}).reduce(
+    (acc, [stock, funds]) => {
+      Object.keys(funds || {}).forEach((fundName) => {
+        acc[fundName] = [...(acc[fundName] || []), stock];
+      });
+      return acc;
+    },
+    {}
+  );
+  const directPlanOpportunities = portfolio.holdings
+    .filter(
+      (holding) =>
+        holding.planType === 'regular' &&
+        holding.directExpenseRatio !== null &&
+        holding.directExpenseRatio !== undefined &&
+        holding.expenseRatio > holding.directExpenseRatio
+    )
+    .map((holding) => ({
+      ...holding,
+      annualDrag: holding.currentValue * (holding.expenseRatio - holding.directExpenseRatio),
+    }))
+    .sort((left, right) => right.annualDrag - left.annualDrag);
+  const topExpenseOpportunity = directPlanOpportunities[0] ?? null;
+  const overlapCandidates = portfolio.holdings.filter(
+    (holding) => (overlapSignalsByFund[holding.fundName] || []).length > 0
+  );
+  const rankOverlapCandidate = (holding) =>
+    ((overlapSignalsByFund[holding.fundName] || []).length * 1000) + (holding.currentValue || 0);
+  const taxAwareOverlapCandidate = [...overlapCandidates]
+    .filter((holding) => (holding.holdingPeriodDays ?? 0) >= 365)
+    .sort((left, right) => rankOverlapCandidate(right) - rankOverlapCandidate(left))[0] || null;
+  const stcgDeferredOverlapCount = overlapCandidates.filter(
+    (holding) =>
+      holding.holdingPeriodDays !== null &&
+      holding.holdingPeriodDays !== undefined &&
+      holding.holdingPeriodDays < 365
+  ).length;
+  const topOverlapDetail = portfolio.overlapDetails?.[0] ?? null;
+  const topOverlapLabel = topOverlapDetail?.stockName ?? topOverlapDetail?.stock_name ?? Object.keys(portfolio.overlapMatrix ?? {})[0] ?? null;
+  const topOverlapFundCount =
+    Object.keys(topOverlapDetail?.funds ?? portfolio.overlapMatrix?.[topOverlapLabel] ?? {}).length;
 
   return (
     <motion.div
@@ -218,9 +259,61 @@ export function PortfolioPage() {
         <StatCard
           title="Expense Drag"
           value={formatCurrency(portfolio.expenseRatioDragInr)}
-          subtitle="Annual cost impact"
+          subtitle="Annual drag vs direct plans"
           icon={Layers}
         />
+      </motion.div>
+
+      <motion.div variants={item} className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="border-blue-100 bg-blue-50/70">
+          <CardContent className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">
+              Direct-Plan Equivalent Drag
+            </p>
+            <p className="text-2xl font-bold text-slate-900">
+              {formatCurrency(portfolio.expenseRatioDragInr)}
+            </p>
+            <p className="text-sm leading-6 text-slate-700">
+              {directPlanOpportunities.length
+                ? `${directPlanOpportunities.length} regular holding(s) still cost more than their direct-plan equivalents. Highest drag: ${topExpenseOpportunity.fundName} at about ${formatCurrency(topExpenseOpportunity.annualDrag)} per year.`
+                : 'No regular-plan expense gap is obvious in the current portfolio snapshot.'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-emerald-100 bg-emerald-50/70">
+          <CardContent className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600">
+              Tax-Aware Rebalancing
+            </p>
+            <p className="text-2xl font-bold text-slate-900">
+              {taxAwareOverlapCandidate ? taxAwareOverlapCandidate.fundName.split(' ').slice(0, 2).join(' ') : 'Review'}
+            </p>
+            <p className="text-sm leading-6 text-slate-700">
+              {taxAwareOverlapCandidate
+                ? `Start with ${taxAwareOverlapCandidate.fundName}: repeated names include ${(overlapSignalsByFund[taxAwareOverlapCandidate.fundName] || []).slice(0, 3).join(', ')} and the holding appears outside the STCG window.`
+                : stcgDeferredOverlapCount
+                  ? `Repeated positions are visible, but ${stcgDeferredOverlapCount} overlap-heavy holding(s) still appear to be inside the STCG window. Redirect fresh SIPs before trimming if you want to stay tax-aware.`
+                  : 'No overlap-driven tax-timing issue is obvious from the latest analytics.'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-amber-100 bg-amber-50/70">
+          <CardContent className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+              Strongest Overlap Signal
+            </p>
+            <p className="text-2xl font-bold text-slate-900">
+              {topOverlapLabel || 'None'}
+            </p>
+            <p className="text-sm leading-6 text-slate-700">
+              {topOverlapLabel
+                ? `${topOverlapLabel} appears across ${topOverlapFundCount} fund position(s), so it is the clearest stock-level duplication to address first in any overlap reduction plan.`
+                : 'No repeated stock-level concentration signal was detected in the latest portfolio run.'}
+            </p>
+          </CardContent>
+        </Card>
       </motion.div>
 
       {/* Tabs for different views */}
@@ -263,6 +356,7 @@ export function PortfolioPage() {
             <OverlapHeatmap
               overlapMatrix={portfolio.overlapMatrix}
               overlapDetails={portfolio.overlapDetails}
+              holdings={portfolio.holdings}
             />
           </TabsContent>
 
@@ -362,7 +456,44 @@ export function PortfolioPage() {
                               </span>
                             </td>
                             <td className="py-4 px-4 text-right text-sm text-gray-600">
-                              {formatPercentage(holding.expenseRatio, 2)}
+                              <div>
+                                <p>{formatPercentage(holding.expenseRatio, 2)}</p>
+                                {holding.planType === 'direct' ? (
+                                  <p className="mt-1 text-xs text-emerald-600">
+                                    Direct plan already in place
+                                  </p>
+                                ) : holding.directExpenseRatio !== null &&
+                                  holding.directExpenseRatio !== undefined &&
+                                  holding.expenseRatio > holding.directExpenseRatio ? (
+                                  <>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                      Direct equivalent {formatPercentage(holding.directExpenseRatio, 2)}
+                                    </p>
+                                    <p className="mt-1 text-xs text-amber-600">
+                                      Drag {formatCurrency(holding.currentValue * (holding.expenseRatio - holding.directExpenseRatio))}/yr
+                                    </p>
+                                  </>
+                                ) : holding.directExpenseRatio !== null &&
+                                  holding.directExpenseRatio !== undefined ? (
+                                  <p className="mt-1 text-xs text-gray-500">
+                                    Direct equivalent {formatPercentage(holding.directExpenseRatio, 2)}
+                                  </p>
+                                ) : (
+                                  <p className="mt-1 text-xs text-gray-400">
+                                    Direct-plan equivalent unavailable
+                                  </p>
+                                )}
+                                {(overlapSignalsByFund[holding.fundName] || []).length > 0 ? (
+                                  <p className="mt-1 text-xs text-blue-600">
+                                    Overlap: {(overlapSignalsByFund[holding.fundName] || []).slice(0, 2).join(', ')}
+                                  </p>
+                                ) : null}
+                                {holding.holdingPeriodDays !== null && holding.holdingPeriodDays !== undefined ? (
+                                  <p className="mt-1 text-xs text-gray-500">
+                                    Holding window {holding.holdingPeriodDays} days
+                                  </p>
+                                ) : null}
+                              </div>
                             </td>
                           </tr>
                         );

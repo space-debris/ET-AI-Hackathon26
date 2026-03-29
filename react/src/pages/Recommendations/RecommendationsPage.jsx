@@ -17,7 +17,7 @@ import { Spinner } from '../../components/ui/Spinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { RuntimeNotice } from '../../components/ui/RuntimeNotice';
 import { portfolioApi, runtimeConfig, userApi } from '../../services/api';
-import { formatCurrency, getActionColor } from '../../utils/helpers';
+import { formatCurrency, formatPercentage, getActionColor } from '../../utils/helpers';
 import { clsx } from 'clsx';
 
 const container = {
@@ -44,6 +44,7 @@ const actionIcons = {
 export function RecommendationsPage() {
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState(null);
+  const [portfolio, setPortfolio] = useState(null);
   const [error, setError] = useState(null);
   const [expandedRecommendation, setExpandedRecommendation] = useState(null);
 
@@ -59,8 +60,22 @@ export function RecommendationsPage() {
           }
         }
 
-        const data = await portfolioApi.getRebalancingPlan();
-        setRecommendations(data);
+        const [rebalancingResult, portfolioResult] = await Promise.allSettled([
+          portfolioApi.getRebalancingPlan(),
+          portfolioApi.getAnalytics(),
+        ]);
+
+        if (rebalancingResult.status === 'fulfilled') {
+          setRecommendations(rebalancingResult.value);
+        } else {
+          throw rebalancingResult.reason;
+        }
+
+        if (portfolioResult.status === 'fulfilled') {
+          setPortfolio(portfolioResult.value);
+        } else {
+          console.error('Portfolio context unavailable for recommendations:', portfolioResult.reason);
+        }
       } catch (fetchError) {
         console.error('Failed to fetch recommendations:', fetchError);
         setError(fetchError.message);
@@ -136,12 +151,89 @@ export function RecommendationsPage() {
   const switchCount = recommendations.filter((item) => item.action === 'switch').length;
   const reduceCount = recommendations.filter((item) => item.action === 'reduce').length;
   const taxAwareCount = recommendations.filter((item) => item.taxImpact).length;
+  const holdingsByFund = new Map((portfolio?.holdings ?? []).map((holding) => [holding.fundName, holding]));
+  const overlapSignalsByFund = Object.entries(portfolio?.overlapMatrix ?? {}).reduce(
+    (acc, [stock, funds]) => {
+      Object.keys(funds || {}).forEach((fundName) => {
+        acc[fundName] = [...(acc[fundName] || []), stock];
+      });
+      return acc;
+    },
+    {}
+  );
+  const getRecommendationContext = (recommendation) => {
+    const holding = holdingsByFund.get(recommendation.fundName);
+    const overlapSignals = overlapSignalsByFund[recommendation.fundName] || [];
+    const hasDirectGap = Boolean(
+      holding &&
+      holding.planType === 'regular' &&
+      holding.directExpenseRatio !== null &&
+      holding.directExpenseRatio !== undefined &&
+      holding.expenseRatio > holding.directExpenseRatio
+    );
+    const annualDrag = hasDirectGap
+      ? holding.currentValue * (holding.expenseRatio - holding.directExpenseRatio)
+      : 0;
+    const taxSafeNow = holding
+      ? holding.holdingPeriodDays !== null && holding.holdingPeriodDays !== undefined
+        ? holding.holdingPeriodDays >= 365
+        : /outside the STCG window|LTCG|No immediate tax action|No tax impact/i.test(recommendation.taxImpact || '')
+      : /outside the STCG window|LTCG|No immediate tax action|No tax impact/i.test(recommendation.taxImpact || '');
+    const hasStcgCaution = holding
+      ? holding.holdingPeriodDays !== null && holding.holdingPeriodDays !== undefined
+        ? holding.holdingPeriodDays < 365
+        : /STCG|wait until|short-term/i.test(recommendation.taxImpact || '')
+      : /STCG|wait until|short-term/i.test(recommendation.taxImpact || '');
 
-  const getNextStep = (recommendation) => {
+    return {
+      holding,
+      overlapSignals,
+      hasDirectGap,
+      annualDrag,
+      taxSafeNow,
+      hasStcgCaution,
+    };
+  };
+  const recommendationContexts = recommendations.map((recommendation) => ({
+    recommendation,
+    context: getRecommendationContext(recommendation),
+  }));
+  const directPlanSavings = recommendationContexts.reduce(
+    (sum, item) => sum + item.context.annualDrag,
+    0
+  );
+  const overlapManagedCount = recommendationContexts.filter(
+    (item) => item.context.overlapSignals.length > 0 || item.recommendation.action === 'reduce'
+  ).length;
+  const taxSafeNowCount = recommendationContexts.filter((item) => item.context.taxSafeNow).length;
+  const getTargetDisplayName = (recommendation, context) => {
+    if (recommendation.targetFund) {
+      return recommendation.targetFund;
+    }
+    if (recommendation.action === 'switch' && context?.hasDirectGap) {
+      return `Direct-plan equivalent of ${recommendation.fundName}`;
+    }
+    return null;
+  };
+
+  const getNextStep = (recommendation, context) => {
+    const targetDisplayName = getTargetDisplayName(recommendation, context);
     if (recommendation.action === 'switch' && recommendation.targetFund) {
-      return `Review the direct alternative ${recommendation.targetFund} before making the switch.`;
+      if (context.hasStcgCaution) {
+        return `Hold new money back from ${recommendation.fundName} for now and review ${targetDisplayName} once the one-year window clears if you want to avoid STCG.`;
+      }
+      return `Review the direct alternative ${targetDisplayName} before making the switch.`;
+    }
+    if (recommendation.action === 'switch' && targetDisplayName) {
+      if (context.hasStcgCaution) {
+        return `Hold new money back from ${recommendation.fundName} for now and review the ${targetDisplayName} once the one-year window clears if you want to avoid STCG.`;
+      }
+      return `Review the ${targetDisplayName} before making the switch.`;
     }
     if (recommendation.action === 'reduce') {
+      if (context.hasStcgCaution) {
+        return `Pause fresh SIPs here first, then trim${recommendation.percentage ? ` by about ${recommendation.percentage}%` : ''} after the short-term tax window clears.`;
+      }
       return `Trim exposure gradually${recommendation.percentage ? ` by about ${recommendation.percentage}%` : ''} while keeping the rest invested.`;
     }
     if (recommendation.action === 'hold') {
@@ -204,6 +296,48 @@ export function RecommendationsPage() {
         ))}
       </motion.div>
 
+      <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="border-blue-100 bg-blue-50/70">
+          <CardContent className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">
+              Direct-Plan Savings
+            </p>
+            <p className="text-2xl font-bold text-slate-900">
+              {portfolio ? formatCurrency(directPlanSavings) : `${switchCount} actions`}
+            </p>
+            <p className="text-sm leading-6 text-slate-700">
+              {portfolio
+                ? 'Annual expense drag identified across switch-ready or switch-later regular plans.'
+                : 'Switch actions already point to direct-plan equivalents where the cost gap is material.'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-emerald-100 bg-emerald-50/70">
+          <CardContent className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-600">
+              Tax-Safe First Moves
+            </p>
+            <p className="text-2xl font-bold text-slate-900">{taxSafeNowCount}</p>
+            <p className="text-sm leading-6 text-slate-700">
+              Recommendation(s) look actionable now without a short-term tax warning.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-amber-100 bg-amber-50/70">
+          <CardContent className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+              Overlap-Led Changes
+            </p>
+            <p className="text-2xl font-bold text-slate-900">{overlapManagedCount}</p>
+            <p className="text-sm leading-6 text-slate-700">
+              Recommendation(s) explicitly tie back to repeated stock exposure or concentration.
+            </p>
+          </CardContent>
+        </Card>
+      </motion.div>
+
       <motion.div variants={item}>
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -221,6 +355,8 @@ export function RecommendationsPage() {
         {recommendations.map((recommendation, idx) => {
           const ActionIcon = actionIcons[recommendation.action] || Clock;
           const isExpanded = expandedRecommendation === idx;
+          const context = getRecommendationContext(recommendation);
+          const targetDisplayName = getTargetDisplayName(recommendation, context);
           return (
             <Card key={idx} className="overflow-hidden">
               <div
@@ -262,16 +398,39 @@ export function RecommendationsPage() {
                       </Badge>
                     </div>
 
-                    {recommendation.targetFund && (
+                    {targetDisplayName && (
                       <div className="flex items-center gap-2 mb-3 p-2 bg-blue-50 rounded-lg">
                         <ArrowRight className="h-4 w-4 text-blue-600" />
                         <span className="text-sm text-blue-700">
-                          Switch to: <strong>{recommendation.targetFund}</strong>
+                          Switch to: <strong>{targetDisplayName}</strong>
                         </span>
                       </div>
                     )}
 
                     <p className="text-sm text-gray-600 mb-3">{recommendation.rationale}</p>
+
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {context.overlapSignals.length ? (
+                        <Badge variant="warning" size="sm">
+                          Overlap: {context.overlapSignals.slice(0, 2).join(', ')}
+                        </Badge>
+                      ) : null}
+                      {context.hasDirectGap ? (
+                        <Badge variant="primary" size="sm">
+                          Direct-plan drag: {formatCurrency(context.annualDrag)}/yr
+                        </Badge>
+                      ) : null}
+                      {context.taxSafeNow ? (
+                        <Badge variant="success" size="sm">
+                          Tax-safe to review now
+                        </Badge>
+                      ) : null}
+                      {context.hasStcgCaution ? (
+                        <Badge variant="warning" size="sm">
+                          Wait to avoid STCG
+                        </Badge>
+                      ) : null}
+                    </div>
 
                     <div className="flex items-center gap-4 text-sm">
                       <div className="flex items-center gap-1">
@@ -328,10 +487,10 @@ export function RecommendationsPage() {
                           {recommendation.action.toUpperCase()}
                           {recommendation.percentage ? ` ${recommendation.percentage}%` : ''}
                         </p>
-                        {recommendation.targetFund && (
+                        {targetDisplayName && (
                           <p>
                             <span className="font-medium text-slate-900">Target fund:</span>{' '}
-                            {recommendation.targetFund}
+                            {targetDisplayName}
                           </p>
                         )}
                         {recommendation.amountInr ? (
@@ -358,6 +517,43 @@ export function RecommendationsPage() {
                       </p>
                     </div>
 
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Overlap And Cost Context
+                      </p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700">
+                        <p>
+                          <span className="font-medium text-slate-900">Repeated stocks:</span>{' '}
+                          {context.overlapSignals.length
+                            ? context.overlapSignals.join(', ')
+                            : 'No explicit overlap signal linked to this action.'}
+                        </p>
+                        <p>
+                          <span className="font-medium text-slate-900">Plan type:</span>{' '}
+                          {context.holding ? context.holding.planType.toUpperCase() : 'Unavailable'}
+                        </p>
+                        {context.hasDirectGap ? (
+                          <>
+                            <p>
+                              <span className="font-medium text-slate-900">Expense ratio:</span>{' '}
+                              {formatPercentage(context.holding.expenseRatio, 2)} vs direct {formatPercentage(context.holding.directExpenseRatio, 2)}
+                            </p>
+                            <p>
+                              <span className="font-medium text-slate-900">Estimated annual drag:</span>{' '}
+                              {formatCurrency(context.annualDrag)}
+                            </p>
+                          </>
+                        ) : null}
+                        {context.holding?.holdingPeriodDays !== null &&
+                        context.holding?.holdingPeriodDays !== undefined ? (
+                          <p>
+                            <span className="font-medium text-slate-900">Holding period:</span>{' '}
+                            {context.holding.holdingPeriodDays} days
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
                     <div className="rounded-xl bg-emerald-50 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">
                         Tax Consideration
@@ -372,7 +568,7 @@ export function RecommendationsPage() {
                         Suggested Next Step
                       </p>
                       <p className="mt-3 text-sm leading-6 text-slate-700">
-                        {getNextStep(recommendation)}
+                        {getNextStep(recommendation, context)}
                       </p>
                     </div>
                   </div>
@@ -398,7 +594,9 @@ export function RecommendationsPage() {
                     .map((item, idx) => (
                       <li key={idx} className="flex items-center gap-2 text-sm">
                         <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                        <span>Switch {item.fundName.split(' ')[0]} as recommended by our AI system.</span>
+                        <span>
+                          Switch {item.fundName} to {getTargetDisplayName(item, getRecommendationContext(item)) || 'the direct-plan equivalent'} and review the tax note before execution.
+                        </span>
                       </li>
                     ))}
                   {recommendations
@@ -407,8 +605,8 @@ export function RecommendationsPage() {
                       <li key={idx} className="flex items-center gap-2 text-sm">
                         <div className="w-2 h-2 bg-amber-500 rounded-full" />
                         <span>
-                          Reduce {item.fundName.split(' ')[0]}
-                          {item.percentage ? ` by ${item.percentage}%` : ''}.
+                          Reduce {item.fundName}
+                          {item.percentage ? ` by ${item.percentage}%` : ''} with the tax timing in mind.
                         </span>
                       </li>
                     ))}
@@ -423,7 +621,7 @@ export function RecommendationsPage() {
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="h-4 w-4 text-emerald-500" />
-                    <span>{reduceCount} reduce action(s) address overlap or concentration.</span>
+                    <span>{reduceCount} reduce action(s) address overlap or concentration at fund level.</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <CheckCircle className="h-4 w-4 text-emerald-500" />

@@ -11,6 +11,7 @@ export const MOCK_HOLDINGS = [
     expenseRatio: 0.018,
     directExpenseRatio: 0.0045,
     planType: 'regular',
+    holdingPeriodDays: 420,
     topHoldings: [
       { stockName: 'Reliance Industries', weight: 0.07 },
       { stockName: 'HDFC Bank', weight: 0.06 },
@@ -29,6 +30,7 @@ export const MOCK_HOLDINGS = [
     expenseRatio: 0.017,
     directExpenseRatio: 0.004,
     planType: 'regular',
+    holdingPeriodDays: 210,
     topHoldings: [
       { stockName: 'Reliance Industries', weight: 0.08 },
       { stockName: 'Infosys', weight: 0.07 },
@@ -47,6 +49,7 @@ export const MOCK_HOLDINGS = [
     expenseRatio: 0.019,
     directExpenseRatio: 0.005,
     planType: 'regular',
+    holdingPeriodDays: 530,
     topHoldings: [
       { stockName: 'Reliance Industries', weight: 0.05 },
       { stockName: 'Infosys', weight: 0.06 },
@@ -65,6 +68,7 @@ export const MOCK_HOLDINGS = [
     expenseRatio: 0.014,
     directExpenseRatio: 0.003,
     planType: 'direct',
+    holdingPeriodDays: 610,
     topHoldings: [
       { stockName: 'Infosys', weight: 0.08 },
       { stockName: 'HDFC Bank', weight: 0.07 },
@@ -83,6 +87,7 @@ export const MOCK_HOLDINGS = [
     expenseRatio: 0.016,
     directExpenseRatio: 0.004,
     planType: 'regular',
+    holdingPeriodDays: 760,
     topHoldings: [
       { stockName: 'HDFC Bank', weight: 0.08 },
       { stockName: 'Infosys', weight: 0.06 },
@@ -101,6 +106,7 @@ export const MOCK_HOLDINGS = [
     expenseRatio: 0.015,
     directExpenseRatio: 0.0035,
     planType: 'direct',
+    holdingPeriodDays: 820,
     topHoldings: [
       { stockName: 'Alphabet Inc', weight: 0.06 },
       { stockName: 'Microsoft', weight: 0.05 },
@@ -151,6 +157,31 @@ export const MOCK_PORTFOLIO_ANALYTICS = {
       'Axis ELSS Tax Saver Fund': 0.05,
     },
   },
+  overlapDetails: [
+    {
+      stockName: 'HDFC Bank',
+      funds: {
+        'HDFC Mid-Cap Opportunities Fund': 0.06,
+        'SBI Bluechip Fund': 0.06,
+        'ICICI Prudential Multicap Fund': 0.05,
+        'Mirae Asset Large Cap Fund': 0.07,
+        'Axis ELSS Tax Saver Fund': 0.08,
+        'Parag Parikh Flexi Cap Fund': 0.04,
+      },
+      totalPortfolioExposure: 0.201,
+    },
+    {
+      stockName: 'Infosys',
+      funds: {
+        'HDFC Mid-Cap Opportunities Fund': 0.05,
+        'SBI Bluechip Fund': 0.07,
+        'ICICI Prudential Multicap Fund': 0.06,
+        'Mirae Asset Large Cap Fund': 0.08,
+        'Axis ELSS Tax Saver Fund': 0.06,
+      },
+      totalPortfolioExposure: 0.154,
+    },
+  ],
   expenseRatioDragInr: 5644.85,
   totalCurrentValue: 1600000,
   totalInvested: 1200000,
@@ -175,26 +206,29 @@ export const MOCK_REBALANCING_ACTIONS = [
   {
     fundName: 'HDFC Mid-Cap Opportunities Fund',
     action: 'switch',
-    percentage: 50,
+    percentage: 100,
+    amountInr: 450000,
     targetFund: 'HDFC Mid-Cap Opportunities Fund - Direct Growth',
-    taxImpact: 'LTCG of ~₹25,000 applicable',
-    rationale: 'Switch from Regular to Direct plan to save ₹6,750 annually in expense ratio',
+    taxImpact: 'Held beyond one year, so this is the cleaner first switch from a tax-timing perspective. Review LTCG on gains before execution.',
+    rationale: 'Switch from the regular plan to the direct equivalent to save about ₹6,075 annually while reducing repeated exposure to Reliance Industries and HDFC Bank.',
   },
   {
     fundName: 'SBI Bluechip Fund',
-    action: 'hold',
+    action: 'switch',
     percentage: 100,
-    targetFund: null,
-    taxImpact: 'No tax impact',
-    rationale: 'Core large-cap holding performing as expected. Good diversification.',
+    amountInr: 320000,
+    targetFund: 'SBI Bluechip Fund - Direct Growth',
+    taxImpact: 'Wait until the one-year mark if you want to avoid STCG before switching this regular plan.',
+    rationale: 'The direct-plan equivalent is cheaper, but this fund still appears to be inside the STCG window, so defer the switch for tax-aware execution.',
   },
   {
     fundName: 'ICICI Prudential Multicap Fund',
     action: 'reduce',
     percentage: 30,
+    amountInr: 84000,
     targetFund: null,
-    taxImpact: 'STCG of ~₹8,000 may apply if held < 1 year',
-    rationale: 'High overlap with other funds (Reliance 5%, HDFC Bank 5%). Reduce exposure.',
+    taxImpact: 'Held beyond one year, so this overlap reduction can be reviewed before the short-term tax window becomes a constraint.',
+    rationale: 'High overlap with other funds through Reliance Industries, HDFC Bank, and Infosys. Trim this holding first to reduce duplication without triggering STCG.',
   },
   {
     fundName: 'Axis ELSS Tax Saver Fund',

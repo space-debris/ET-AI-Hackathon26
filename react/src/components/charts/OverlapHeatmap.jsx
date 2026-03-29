@@ -1,8 +1,10 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
+import { formatCurrency, formatPercentagePoints } from '../../utils/helpers';
 
 export function OverlapHeatmap({
   overlapMatrix,
   overlapDetails = [],
+  holdings = [],
   title = 'Stock Overlap Analysis',
 }) {
   // Get unique stocks and funds
@@ -17,6 +19,17 @@ export function OverlapHeatmap({
     f.split(' ').slice(0, 2).join(' ')
   );
   const fullFundNames = Array.from(allFunds);
+  const overlapSignalsByFund = fullFundNames.reduce((acc, fund) => {
+    acc[fund] = [];
+    return acc;
+  }, {});
+
+  stocks.forEach((stock) => {
+    Object.keys(overlapMatrix[stock] || {}).forEach((fund) => {
+      overlapSignalsByFund[fund] = [...(overlapSignalsByFund[fund] || []), stock];
+    });
+  });
+
   const weightedOverlapScore = overlapDetails.length
     ? overlapDetails.reduce(
         (sum, detail) => sum + ((detail.totalPortfolioExposure ?? detail.total_portfolio_exposure ?? 0) * 100),
@@ -47,6 +60,56 @@ export function OverlapHeatmap({
   const overlapAction = topSignal
     ? `Start with ${topSignal.stockName ?? topSignal.stock_name}: it is the clearest repeated signal across ${Object.keys(topSignal.funds || {}).length} funds.`
     : 'No overlap action is needed right now.';
+  const overlappingHoldings = holdings.filter(
+    (holding) => (overlapSignalsByFund[holding.fundName] || []).length > 0
+  );
+  const rankCandidate = (holding) =>
+    ((overlapSignalsByFund[holding.fundName] || []).length * 1000) +
+    (holding.currentValue || 0) +
+    Math.max(
+      0,
+      ((holding.expenseRatio ?? 0) - (holding.directExpenseRatio ?? holding.expenseRatio ?? 0)) * 1000000
+    );
+  const stcgSafeCandidate = [...overlappingHoldings]
+    .filter((holding) => (holding.holdingPeriodDays ?? 0) >= 365)
+    .sort((left, right) => rankCandidate(right) - rankCandidate(left))[0] || null;
+  const stcgDeferredCandidate = [...overlappingHoldings]
+    .filter(
+      (holding) =>
+        holding.holdingPeriodDays !== null &&
+        holding.holdingPeriodDays !== undefined &&
+        holding.holdingPeriodDays < 365
+    )
+    .sort((left, right) => rankCandidate(right) - rankCandidate(left))[0] || null;
+  const directPlanCandidate = [...overlappingHoldings]
+    .filter(
+      (holding) =>
+        holding.planType === 'regular' &&
+        holding.directExpenseRatio !== null &&
+        holding.directExpenseRatio !== undefined &&
+        holding.expenseRatio > holding.directExpenseRatio
+    )
+    .sort(
+      (left, right) =>
+        ((right.currentValue || 0) * (right.expenseRatio - right.directExpenseRatio)) -
+        ((left.currentValue || 0) * (left.expenseRatio - left.directExpenseRatio))
+    )[0] || null;
+  const taxAwareMove = stcgSafeCandidate
+    ? `Start with ${stcgSafeCandidate.fundName}: repeated names include ${(overlapSignalsByFund[stcgSafeCandidate.fundName] || []).slice(0, 3).join(', ')} and the holding looks outside the STCG window.${
+        directPlanCandidate?.fundName === stcgSafeCandidate.fundName
+          ? ` A switch to direct could also save about ${formatCurrency(stcgSafeCandidate.currentValue * (stcgSafeCandidate.expenseRatio - stcgSafeCandidate.directExpenseRatio))} a year.`
+          : ''
+      }`
+    : stocks.length
+      ? 'No obvious long-held overlap candidate is visible yet. Redirect new SIPs away from the repeated names first, then review trims once the short-term tax window clears.'
+      : 'No tax-aware overlap action is needed right now.';
+  const stcgDeferralNote = stcgDeferredCandidate
+    ? `Avoid trimming ${stcgDeferredCandidate.fundName} immediately if you want to avoid STCG. It still overlaps on ${(overlapSignalsByFund[stcgDeferredCandidate.fundName] || []).slice(0, 2).join(', ')} but looks to be inside the one-year holding window.`
+    : stcgSafeCandidate
+      ? `No immediate STCG deferral is needed for ${stcgSafeCandidate.fundName}. It looks outside the one-year holding window, so you can focus on overlap and direct-plan savings instead of waiting for tax timing.`
+      : directPlanCandidate
+        ? `${directPlanCandidate.fundName} still has a regular-plan cost gap of ${formatPercentagePoints((directPlanCandidate.expenseRatio - directPlanCandidate.directExpenseRatio) * 100, 2)} versus direct, but no clear STCG holding-period blocker is visible in the top overlap candidate right now.`
+      : 'No near-term STCG deferral signal is obvious from the current portfolio snapshot.';
 
   const getCellStyle = (weight) => {
     if (weight >= 0.08) return { backgroundColor: '#b91c1c', color: '#fff' };
@@ -122,6 +185,24 @@ export function OverlapHeatmap({
                     {overlapAction}
                   </p>
                 </div>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-600">
+                  Tax-Aware First Move
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">
+                  {taxAwareMove}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-amber-100 bg-amber-50/80 p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                  Defer For STCG
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">
+                  {stcgDeferralNote}
+                </p>
               </div>
             </div>
           </div>

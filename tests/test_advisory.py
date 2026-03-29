@@ -636,6 +636,22 @@ class TestAdvisoryAgentRunNode:
 class TestRebalancingPlanParsing:
     """Test runtime validation of live rebalancing payloads."""
 
+    def test_infer_direct_plan_target_preserves_scheme_name(self, advisory_agent):
+        assert advisory_agent._infer_direct_plan_target(
+            "Axis Bluechip Fund - Regular Plan - Growth"
+        ) == "Axis Bluechip Fund - Direct Plan - Growth"
+        assert advisory_agent._infer_direct_plan_target(
+            "HDFC Top 100 Fund - Regular Growth"
+        ) == "HDFC Top 100 Fund - Direct Growth"
+
+    def test_sanitize_switch_target_rewrites_suspicious_suffixing(self, advisory_agent):
+        sanitized = advisory_agent._sanitize_switch_target_fund(
+            "Axis Bluechip Fund - Regular Plan - Growth",
+            "Axis Bluechip Fund - Regular Plan - Growth Direct Plan",
+        )
+
+        assert sanitized == "Axis Bluechip Fund - Direct Plan - Growth"
+
     def test_skips_unknown_holdings_and_coerces_null_tax(self, advisory_agent, sample_analytics, basic_profile):
         advisory_agent._call_llm = MagicMock(return_value=json.dumps([
             {
@@ -668,6 +684,71 @@ class TestRebalancingPlanParsing:
         assert len(actions) == len(sample_analytics.holdings)
         assert any(action.action in (RebalancingActionType.SWITCH, RebalancingActionType.REDUCE) for action in actions)
         assert all(action.rationale for action in actions)
+
+    def test_deterministic_rebalancing_surfaces_direct_plan_drag_and_tax_timing(
+        self,
+        advisory_agent,
+        sample_analytics,
+        basic_profile,
+    ):
+        advisory_agent._call_llm = MagicMock(side_effect=RuntimeError("No Gemini key"))
+
+        actions = advisory_agent.generate_rebalancing_plan(sample_analytics, basic_profile)
+        action_map = {action.fund_name: action for action in actions}
+
+        hdfc_action = action_map["HDFC Mid-Cap Opp Fund"]
+        sbi_action = action_map["SBI Bluechip Fund"]
+
+        assert hdfc_action.action == RebalancingActionType.SWITCH
+        assert hdfc_action.amount_inr == pytest.approx(450000.0)
+        assert "outside the STCG window" in hdfc_action.tax_impact
+        assert "direct-plan equivalent" in hdfc_action.rationale
+        assert "Reliance" in hdfc_action.rationale
+
+        assert sbi_action.action == RebalancingActionType.SWITCH
+        assert "avoid STCG" in sbi_action.tax_impact
+        assert "wait until" in sbi_action.tax_impact.lower()
+
+    def test_live_rebalancing_switch_target_is_sanitized_for_same_scheme(self, advisory_agent, basic_profile):
+        analytics = PortfolioAnalytics(
+            holdings=[
+                FundHolding(
+                    fund_name="Axis Bluechip Fund - Regular Plan - Growth",
+                    category=FundCategory.LARGE_CAP,
+                    current_value=181245.84,
+                    invested_amount=120000,
+                    units_held=2959.42,
+                    expense_ratio=0.0164,
+                    direct_expense_ratio=0.0064,
+                    plan_type=PlanType.REGULAR,
+                    holding_period_days=420,
+                    xirr=0.102,
+                )
+            ],
+            overall_xirr=0.102,
+            fund_wise_xirr={"Axis Bluechip Fund - Regular Plan - Growth": 0.102},
+            overlap_matrix={},
+            expense_ratio_drag_inr=1812.46,
+            total_current_value=181245.84,
+            total_invested=120000,
+            category_allocation={"large_cap": 100.0},
+            amc_allocation={"AXIS": 100.0},
+        )
+        advisory_agent._call_llm = MagicMock(return_value=json.dumps([
+            {
+                "fund_name": "Axis Bluechip Fund - Regular Plan - Growth",
+                "action": "switch",
+                "target_fund": "Axis Bluechip Fund - Growth Plan",
+                "tax_impact": "No STCG",
+                "rationale": "Switch to direct",
+                "priority": 1,
+            }
+        ]))
+
+        actions = advisory_agent.generate_rebalancing_plan(analytics, basic_profile)
+
+        assert len(actions) == 1
+        assert actions[0].target_fund == "Axis Bluechip Fund - Direct Plan - Growth"
 
 
 class TestHealthScoreFallback:

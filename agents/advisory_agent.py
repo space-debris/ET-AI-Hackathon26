@@ -18,6 +18,7 @@ Dependencies: langchain-google-genai, shared/schemas.py, shared/config.py, promp
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from datetime import datetime
@@ -252,6 +253,93 @@ class AdvisoryAgent:
     def _format_inr(value: float) -> str:
         return f"₹{value:,.0f}"
 
+    @staticmethod
+    def _format_ratio(value: float) -> str:
+        return f"{value * 100:.2f}%"
+
+    @staticmethod
+    def _normalize_scheme_spacing(fund_name: str) -> str:
+        return re.sub(r"\s+", " ", fund_name or "").strip(" -")
+
+    @classmethod
+    def _normalize_scheme_key(cls, fund_name: str) -> str:
+        cleaned = cls._normalize_scheme_spacing(fund_name).lower()
+        cleaned = cleaned.replace("regular plan", "")
+        cleaned = cleaned.replace("direct plan", "")
+        cleaned = cleaned.replace("regular", "")
+        cleaned = cleaned.replace("direct", "")
+        cleaned = cleaned.replace("growth", "")
+        cleaned = cleaned.replace("plan", "")
+        return re.sub(r"[^a-z0-9]+", "", cleaned)
+
+    @classmethod
+    def _infer_direct_plan_target(cls, fund_name: str) -> Optional[str]:
+        normalized = cls._normalize_scheme_spacing(fund_name)
+        if not normalized:
+            return None
+
+        replacements = [
+            (r"(?i)\bregular\s+plan\s*-\s*growth\b", "Direct Plan - Growth"),
+            (r"(?i)\bregular\s*-\s*growth\b", "Direct - Growth"),
+            (r"(?i)\bregular\s+growth\b", "Direct Growth"),
+            (r"(?i)\bregular\s+plan\b", "Direct Plan"),
+            (r"(?i)\bregular\b", "Direct"),
+        ]
+
+        for pattern, replacement in replacements:
+            if re.search(pattern, normalized):
+                return cls._normalize_scheme_spacing(re.sub(pattern, replacement, normalized))
+
+        if re.search(r"(?i)\bdirect\b", normalized):
+            return normalized
+
+        return None
+
+    @classmethod
+    def _sanitize_switch_target_fund(
+        cls,
+        source_fund_name: str,
+        target_fund: Optional[str],
+    ) -> Optional[str]:
+        inferred_target = cls._infer_direct_plan_target(source_fund_name)
+        if not target_fund:
+            return inferred_target
+
+        normalized_target = cls._normalize_scheme_spacing(target_fund)
+        if not inferred_target:
+            return normalized_target
+
+        same_scheme = (
+            cls._normalize_scheme_key(source_fund_name)
+            == cls._normalize_scheme_key(normalized_target)
+        )
+        suspicious_suffixing = (
+            ("regular" in normalized_target.lower() and "direct" in normalized_target.lower())
+            or (same_scheme and "direct" not in normalized_target.lower())
+        )
+
+        if same_scheme or suspicious_suffixing:
+            return inferred_target
+
+        return normalized_target
+
+    def _overlap_signals_for_fund(
+        self,
+        analytics: PortfolioAnalytics,
+        fund_name: str,
+        limit: int = 3,
+    ) -> List[str]:
+        signals: List[str] = []
+        for stock, fund_weights in analytics.overlap_matrix.items():
+            if fund_name in fund_weights:
+                signals.append(stock)
+
+        signals.sort(
+            key=lambda stock: analytics.overlap_matrix.get(stock, {}).get(fund_name, 0.0),
+            reverse=True,
+        )
+        return signals[:limit]
+
     def _generate_deterministic_rebalancing_plan(
         self,
         analytics: PortfolioAnalytics,
@@ -267,6 +355,7 @@ class AdvisoryAgent:
             tax_impact = "Review capital-gains impact before switching."
             priority = 3
             percentage: Optional[float] = None
+            amount_inr: Optional[float] = None
             target_fund: Optional[str] = None
             action = RebalancingActionType.HOLD
 
@@ -283,38 +372,50 @@ class AdvisoryAgent:
             category_key = holding.category.value if holding.category else "other"
             category_weight = category_totals.get(category_key, 0.0)
             underperforming = (holding.xirr or 0.0) < max(analytics.overall_xirr - 0.03, 0.08)
+            annual_drag = max(holding.current_value * expense_gap, 0.0)
+            overlap_signals = self._overlap_signals_for_fund(analytics, holding.fund_name)
 
             if holding.plan_type == "regular" or getattr(holding.plan_type, "value", None) == "regular":
                 if expense_gap > 0.003:
                     action = RebalancingActionType.SWITCH
-                    priority = 1
-                    target_fund = f"{holding.fund_name} Direct Plan"
-                    annual_drag = holding.current_value * expense_gap
+                    priority = 1 if not holding.is_stcg_eligible else 2
+                    amount_inr = round(holding.current_value, 2)
+                    target_fund = self._infer_direct_plan_target(holding.fund_name)
                     tax_impact = (
-                        "Likely LTCG-friendly if held over one year."
+                        "This looks like a cleaner first move because the holding appears outside the STCG window; review only LTCG on gains before switching."
                         if not holding.is_stcg_eligible
-                        else "STCG may apply if switched before one year."
+                        else f"To avoid STCG, wait until the holding crosses {config.STCG_THRESHOLD_DAYS} days before switching; acting now may trigger short-term capital-gains tax."
                     )
                     rationale_parts.append(
-                        f"Switching can reduce annual cost drag by about {self._format_inr(annual_drag)}."
+                        f"The regular-plan expense ratio of {self._format_ratio(holding.expense_ratio)} is above the direct-plan equivalent of {self._format_ratio(holding.direct_expense_ratio or 0.0)}, costing about {self._format_inr(annual_drag)} a year."
                     )
+                    if overlap_signals:
+                        rationale_parts.append(
+                            f"Repeated stock signals include {', '.join(overlap_signals)}."
+                        )
 
             if action == RebalancingActionType.HOLD and overlap_count >= 1 and category_weight >= 35:
                 action = RebalancingActionType.REDUCE
                 percentage = 10 if overlap_count == 1 else 15
-                priority = 2
+                amount_inr = round(holding.current_value * (percentage / 100), 2)
+                priority = 1 if not holding.is_stcg_eligible else 3
                 tax_impact = (
-                    "STCG may apply if units are held for less than one year."
+                    "Pause fresh SIPs here and revisit the trim after one year if you want to avoid STCG on the exit."
                     if holding.is_stcg_eligible
-                    else "LTCG rules may apply on realised gains."
+                    else "This looks like a better overlap-reduction candidate because it appears outside the STCG window; review LTCG on realised gains before trimming."
                 )
                 rationale_parts.append(
                     f"The fund overlaps on {overlap_count} recurring stock signal(s) inside a {category_weight:.1f}% category tilt."
                 )
+                if overlap_signals:
+                    rationale_parts.append(
+                        f"Trim here first to reduce repeated exposure to {', '.join(overlap_signals)}."
+                    )
 
             if action == RebalancingActionType.HOLD and underperforming and holding.unrealised_gain_pct > 20:
                 action = RebalancingActionType.REDUCE
                 percentage = 10
+                amount_inr = round(holding.current_value * 0.10, 2)
                 priority = 3
                 tax_impact = (
                     "Review realised gains before trimming."
@@ -334,6 +435,10 @@ class AdvisoryAgent:
                 rationale_parts.append(
                     f"The holding remains broadly aligned with a {profile.risk_profile.value} risk profile."
                 )
+                if overlap_signals and holding.is_stcg_eligible:
+                    rationale_parts.append(
+                        f"Repeated names such as {', '.join(overlap_signals)} are visible, but waiting for the STCG window to clear would keep the rebalance more tax-aware."
+                    )
 
             rationale_parts.append(
                 f"Current value is {self._format_inr(holding.current_value)} with {(holding.xirr or analytics.overall_xirr) * 100:.1f}% XIRR."
@@ -344,7 +449,7 @@ class AdvisoryAgent:
                     fund_name=holding.fund_name,
                     action=action,
                     percentage=percentage,
-                    amount_inr=None,
+                    amount_inr=amount_inr,
                     target_fund=target_fund,
                     tax_impact=tax_impact,
                     rationale=" ".join(rationale_parts),
@@ -510,6 +615,7 @@ class AdvisoryAgent:
                 "holding_period_days": h.holding_period_days,
                 "is_stcg_eligible": h.is_stcg_eligible,
                 "xirr": h.xirr,
+                "suggested_direct_target": self._infer_direct_plan_target(h.fund_name),
                 "top_holdings": [
                     {"stock": s.stock_name, "weight": s.weight}
                     for s in h.top_holdings[:5]
@@ -540,6 +646,12 @@ INVESTOR PROFILE:
 Generate a JSON array of RebalancingAction objects. Each must have:
 - fund_name, action (HOLD/EXIT/REDUCE/INCREASE/SWITCH), percentage (if applicable),
   target_fund (if SWITCH), tax_impact, rationale, priority (1=highest to 5=lowest)
+- Prefer specific fund-level actions over generic diversification advice.
+- When overlap exists, identify the exact repeated stocks or concentration signal driving the recommendation.
+- Prefer long-held units first when reducing overlap so the plan lowers duplication without triggering STCG where possible.
+- If a regular plan has a direct-plan equivalent, mention the approximate annual expense drag and use the direct plan as the target fund.
+- If STCG is still a risk, say whether the user should defer the action until the one-year mark instead of implying they should switch immediately.
+- Do not fabricate or append generic suffixes to fund names. If you are switching from a regular plan to the same scheme's direct plan, only convert the known plan/option words and keep the rest of the scheme name unchanged.
 
 Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
 """
@@ -573,7 +685,10 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
                     action=RebalancingActionType(action_type),
                     percentage=item.get("percentage"),
                     amount_inr=item.get("amount_inr"),
-                    target_fund=item.get("target_fund"),
+                    target_fund=self._sanitize_switch_target_fund(
+                        fund_name,
+                        item.get("target_fund"),
+                    ) if action_type == "switch" else item.get("target_fund"),
                     tax_impact=item.get("tax_impact") or "",
                     rationale=item.get("rationale") or "",
                     priority=item.get("priority", 3),
