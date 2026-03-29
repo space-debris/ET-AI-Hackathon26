@@ -97,7 +97,7 @@ export function OverlapHeatmap({
   const taxAwareMove = stcgSafeCandidate
     ? `Start with ${formatFundDisplayName(stcgSafeCandidate.fundName)}: repeated names include ${(overlapSignalsByFund[stcgSafeCandidate.fundName] || []).slice(0, 3).join(', ')} and the holding looks outside the STCG window.${
         directPlanCandidate?.fundName === stcgSafeCandidate.fundName
-          ? ` A switch to direct could also save about ${formatCurrency(stcgSafeCandidate.currentValue * (stcgSafeCandidate.expenseRatio - stcgSafeCandidate.directExpenseRatio))} a year.`
+          ? ` A switch to the direct plan could also save about ${formatCurrency(stcgSafeCandidate.currentValue * (stcgSafeCandidate.expenseRatio - stcgSafeCandidate.directExpenseRatio))} a year.`
           : ''
       }`
     : stocks.length
