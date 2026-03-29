@@ -299,6 +299,50 @@ export function TaxOptimizerPage() {
   }, [profile, calculating]);
 
   const isOldBetter = taxData?.recommendedRegime === 'old';
+  const annualIncomeGap =
+    profile.annualIncome > 0 && profile.baseSalary > 0
+      ? Math.max(profile.annualIncome - profile.baseSalary, 0)
+      : 0;
+  const renderTaxStepList = (steps) => (
+    <div className="space-y-3">
+      {steps.map((step, idx) => {
+        const isSummaryStep =
+          step.description.includes('Total') || step.description.includes('Final');
+        const isWorkingStep = step.section === 'Working';
+
+        return (
+          <div
+            key={`${step.description}-${idx}`}
+            className={clsx(
+              'flex items-start justify-between gap-4',
+              isSummaryStep
+                ? 'border-t pt-2 font-semibold text-gray-900'
+                : isWorkingStep
+                  ? 'rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500'
+                  : 'text-sm text-gray-600'
+            )}
+          >
+            <span className="flex-1">{step.description}</span>
+            <span
+              className={clsx(
+                'shrink-0',
+                step.amount < 0 && !isWorkingStep ? 'text-emerald-600' : 'text-inherit'
+              )}
+            >
+              {isWorkingStep
+                ? 'Info'
+                : (
+                  <>
+                    {step.amount < 0 ? '-' : ''}₹
+                    {Math.abs(step.amount).toLocaleString('en-IN')}
+                  </>
+                )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <motion.div
@@ -358,12 +402,14 @@ export function TaxOptimizerPage() {
               type="number"
               value={profile.annualIncome}
               onChange={(e) => handleProfileChange('annualIncome', e.target.value)}
+              hint="Gross taxable salary used for slab calculation, including HRA and other allowances"
             />
             <Input
               label="Base Salary (INR)"
               type="number"
               value={profile.baseSalary}
               onChange={(e) => handleProfileChange('baseSalary', e.target.value)}
+              hint="Used mainly for HRA calculation and the 10% rent threshold"
             />
             <Input
               label="HRA (INR)"
@@ -432,6 +478,20 @@ export function TaxOptimizerPage() {
                 {taxData ? 'Recompute Tax Comparison' : 'Compare Regimes'}
               </Button>
             </div>
+            {(profile.annualIncome > 0 || profile.baseSalary > 0) && (
+              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900 md:col-span-2 xl:col-span-4">
+                <p className="font-semibold">How we interpret salary inputs</p>
+                <p className="mt-1 text-blue-800">
+                  Annual Income is treated as the gross salary for tax slabs. Base Salary is
+                  used separately for HRA rules, so it is valid for annual income to be higher
+                  than base salary because of HRA, special allowance, bonus, or similar salary
+                  components.
+                  {annualIncomeGap > 0
+                    ? ` In your current inputs, annual income exceeds base salary by ${formatCurrency(annualIncomeGap)}.`
+                    : ''}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
@@ -510,25 +570,7 @@ export function TaxOptimizerPage() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {taxData.oldRegimeSteps.map((step, idx) => (
-                        <div
-                          key={idx}
-                          className={clsx(
-                            'flex justify-between text-sm gap-4',
-                            step.description.includes('Total') || step.description.includes('Final')
-                              ? 'font-semibold text-gray-900 pt-2 border-t'
-                              : 'text-gray-600'
-                          )}
-                        >
-                          <span>{step.description}</span>
-                          <span className={step.amount < 0 ? 'text-emerald-600' : ''}>
-                            {step.amount < 0 ? '-' : ''}₹
-                            {Math.abs(step.amount).toLocaleString('en-IN')}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    {renderTaxStepList(taxData.oldRegimeSteps)}
                     <div className="mt-4 p-3 bg-gray-50 rounded-lg">
                       <p className="text-sm text-gray-500">Final Tax Liability</p>
                       <p className="text-2xl font-bold text-gray-900">
@@ -551,25 +593,7 @@ export function TaxOptimizerPage() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {taxData.newRegimeSteps.map((step, idx) => (
-                        <div
-                          key={idx}
-                          className={clsx(
-                            'flex justify-between text-sm gap-4',
-                            step.description.includes('Total') || step.description.includes('Final')
-                              ? 'font-semibold text-gray-900 pt-2 border-t'
-                              : 'text-gray-600'
-                          )}
-                        >
-                          <span>{step.description}</span>
-                          <span className={step.amount < 0 ? 'text-emerald-600' : ''}>
-                            {step.amount < 0 ? '-' : ''}₹
-                            {Math.abs(step.amount).toLocaleString('en-IN')}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    {renderTaxStepList(taxData.newRegimeSteps)}
                     <div className="mt-4 p-3 bg-gray-50 rounded-lg">
                       <p className="text-sm text-gray-500">Final Tax Liability</p>
                       <p className="text-2xl font-bold text-gray-900">
@@ -590,6 +614,10 @@ export function TaxOptimizerPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
+                      <p className="mb-3 text-sm text-gray-500">
+                        These are eligibility prompts and headroom checks, not deductions we
+                        auto-claim on your behalf.
+                      </p>
                       <div className="space-y-3">
                         {taxData.missedDeductions.map((deduction, idx) => (
                           <div
@@ -613,6 +641,9 @@ export function TaxOptimizerPage() {
                         <Lightbulb className="h-5 w-5 text-blue-500" />
                         <CardTitle>Tax Saving Opportunities</CardTitle>
                       </div>
+                      <CardDescription>
+                        Ranked to help you explain deduction utility alongside liquidity and risk.
+                      </CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">

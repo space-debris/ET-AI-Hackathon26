@@ -110,6 +110,7 @@ SECTION_80C_LIMIT = 150000        # ₹1.5L
 SECTION_80CCD_1B_LIMIT = 50000   # ₹50K additional NPS
 SECTION_80D_LIMIT_SELF = 25000   # ₹25K (health insurance, self)
 SECTION_80D_LIMIT_PARENTS = 50000  # ₹50K (health insurance, senior citizen parents)
+SECTION_80TTA_LIMIT = 10000       # ₹10K (savings account interest)
 SECTION_24_LIMIT = 200000         # ₹2L (home loan interest)
 HRA_METRO_PERCENTAGE = 0.50      # 50% of basic for metro cities
 HRA_NON_METRO_PERCENTAGE = 0.40  # 40% of basic for non-metro

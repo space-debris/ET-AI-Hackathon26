@@ -911,19 +911,80 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
 
     def _calculate_hra_exemption(self, profile: UserFinancialProfile) -> float:
         """Calculate HRA exemption — pure Python, no LLM."""
-        if not profile.hra_received or not profile.rent_paid or not profile.base_salary:
-            return 0.0
+        breakdown = self._get_hra_breakdown(profile)
+        return breakdown["exemption"]
 
-        hra_received = profile.hra_received
-        rent_minus_10pct = profile.rent_paid - (0.10 * profile.base_salary)
-        metro_pct = (
+    def _get_hra_breakdown(self, profile: UserFinancialProfile) -> Dict[str, float]:
+        """Return the HRA formula components for transparent UI/debug output."""
+        hra_received = float(profile.hra_received or 0.0)
+        base_salary = float(profile.base_salary or 0.0)
+        rent_paid = float(profile.rent_paid or 0.0)
+        city_cap_rate = (
             config.HRA_METRO_PERCENTAGE
             if profile.metro_city
             else config.HRA_NON_METRO_PERCENTAGE
         )
-        metro_component = metro_pct * profile.base_salary
+        rent_minus_10pct = (
+            max(rent_paid - (0.10 * base_salary), 0.0)
+            if base_salary > 0 and rent_paid > 0
+            else 0.0
+        )
+        salary_cap = city_cap_rate * base_salary if base_salary > 0 else 0.0
+        exemption = (
+            max(0.0, min(hra_received, rent_minus_10pct, salary_cap))
+            if hra_received > 0 and rent_paid > 0 and base_salary > 0
+            else 0.0
+        )
+        return {
+            "hra_received": hra_received,
+            "rent_minus_10pct": rent_minus_10pct,
+            "salary_cap": salary_cap,
+            "city_cap_rate": city_cap_rate,
+            "exemption": exemption,
+        }
 
-        return max(0, min(hra_received, rent_minus_10pct, metro_component))
+    def _build_hra_working_step(self, profile: UserFinancialProfile) -> Optional[TaxStep]:
+        """Create a zero-impact explainer step so HRA math is visible in the UI."""
+        if not profile.hra_received:
+            return None
+
+        breakdown = self._get_hra_breakdown(profile)
+        city_cap_label = "50% of basic" if profile.metro_city else "40% of basic"
+        return TaxStep(
+            description=(
+                "HRA working: min("
+                f"HRA received {self._format_inr(breakdown['hra_received'])}, "
+                f"rent less 10% basic {self._format_inr(breakdown['rent_minus_10pct'])}, "
+                f"{city_cap_label} cap {self._format_inr(breakdown['salary_cap'])})"
+            ),
+            amount=0.0,
+            section="Working",
+        )
+
+    def _estimate_old_regime_saving(
+        self,
+        profile: UserFinancialProfile,
+        updated_fields: Dict[str, Any],
+        baseline_total_tax: Optional[float] = None,
+    ) -> float:
+        """Compare old-regime liability before and after a hypothetical deduction update."""
+        current_total_tax = (
+            baseline_total_tax
+            if baseline_total_tax is not None
+            else self._calculate_tax_old_regime(profile)[1]
+        )
+        adjusted_profile = profile.model_copy(update=updated_fields)
+        adjusted_total_tax = self._calculate_tax_old_regime(adjusted_profile)[1]
+        return max(current_total_tax - adjusted_total_tax, 0.0)
+
+    def _build_old_regime_saving_hint(self, extra_saving: float) -> str:
+        """Format a potential tax-saving hint when headroom exists."""
+        if extra_saving <= 0:
+            return ""
+        return (
+            f" This could lower your old-regime tax by about "
+            f"{self._format_inr(extra_saving)} if you have additional eligible claims."
+        )
 
     def _calculate_tax_old_regime(
         self, profile: UserFinancialProfile
@@ -947,6 +1008,9 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
         ))
 
         # HRA exemption
+        hra_working_step = self._build_hra_working_step(profile)
+        if hra_working_step is not None:
+            steps.append(hra_working_step)
         hra_exemption = self._calculate_hra_exemption(profile)
         if hra_exemption > 0:
             taxable -= hra_exemption
@@ -1125,31 +1189,99 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
         return tax
 
     def _find_missed_deductions(
-        self, profile: UserFinancialProfile
+        self,
+        profile: UserFinancialProfile,
+        old_total_tax: Optional[float] = None,
     ) -> List[str]:
         """Identify deductions the user is not fully utilising."""
         missed = []
         sec_80c = profile.section_80c or 0
         if sec_80c < config.SECTION_80C_LIMIT:
             gap = config.SECTION_80C_LIMIT - sec_80c
+            extra_saving = self._estimate_old_regime_saving(
+                profile,
+                {"section_80c": config.SECTION_80C_LIMIT},
+                baseline_total_tax=old_total_tax,
+            )
             missed.append(
                 f"Section 80C: ₹{gap:,.0f} unused out of ₹1.5L limit. "
                 f"Consider PPF, ELSS, or life insurance premiums."
+                f"{self._build_old_regime_saving_hint(extra_saving)}"
             )
         if not profile.nps_contribution or profile.nps_contribution == 0:
             missed.append(
                 f"Section 80CCD(1B): ₹50,000 additional NPS deduction not utilised. "
                 f"Opens extra tax saving beyond 80C limit."
             )
+        elif profile.nps_contribution < config.SECTION_80CCD_1B_LIMIT:
+            gap = config.SECTION_80CCD_1B_LIMIT - profile.nps_contribution
+            extra_saving = self._estimate_old_regime_saving(
+                profile,
+                {"nps_contribution": config.SECTION_80CCD_1B_LIMIT},
+                baseline_total_tax=old_total_tax,
+            )
+            missed.append(
+                f"Section 80CCD(1B): You have declared {self._format_inr(profile.nps_contribution)} "
+                f"of NPS contribution, leaving {self._format_inr(gap)} of headroom in the ₹50,000 bucket."
+                f"{self._build_old_regime_saving_hint(extra_saving)}"
+            )
         if not profile.medical_insurance_premium:
             missed.append(
                 "Section 80D: No health insurance premium declared. "
                 "Get a ₹10L+ family floater — deduction up to ₹25,000 (self) + ₹50,000 (parents)."
             )
+        elif profile.medical_insurance_premium < config.SECTION_80D_LIMIT_SELF:
+            gap = config.SECTION_80D_LIMIT_SELF - profile.medical_insurance_premium
+            extra_saving = self._estimate_old_regime_saving(
+                profile,
+                {"medical_insurance_premium": config.SECTION_80D_LIMIT_SELF},
+                baseline_total_tax=old_total_tax,
+            )
+            missed.append(
+                f"Section 80D: You have declared {self._format_inr(profile.medical_insurance_premium)} "
+                f"of self/family medical premium, leaving {self._format_inr(gap)} below the ₹25,000 self/family cap."
+                f"{self._build_old_regime_saving_hint(extra_saving)}"
+            )
         if not profile.home_loan_interest:
             missed.append(
                 "Section 24(b): No home loan interest declared. "
                 "If you have a home loan, claim up to ₹2L deduction."
+            )
+        elif profile.home_loan_interest < config.SECTION_24_LIMIT:
+            gap = config.SECTION_24_LIMIT - profile.home_loan_interest
+            extra_saving = self._estimate_old_regime_saving(
+                profile,
+                {"home_loan_interest": config.SECTION_24_LIMIT},
+                baseline_total_tax=old_total_tax,
+            )
+            missed.append(
+                f"Section 24(b): You are claiming {self._format_inr(profile.home_loan_interest)} "
+                f"of home-loan interest, leaving {self._format_inr(gap)} below the ₹2,00,000 limit."
+                f"{self._build_old_regime_saving_hint(extra_saving)}"
+            )
+
+        hra_received = profile.hra_received or 0
+        if hra_received > 0 and self._calculate_hra_exemption(profile) == 0:
+            if not profile.rent_paid:
+                reason = "because rent paid is ₹0 in the current inputs"
+            elif not profile.base_salary:
+                reason = "because base salary is missing from the current inputs"
+            else:
+                reason = "because the current rent and salary mix does not create an eligible exemption"
+            missed.append(
+                f"HRA exemption: You receive {self._format_inr(hra_received)} of HRA, "
+                f"but no exemption is being claimed {reason}. "
+                "If you pay eligible rent and keep proof, this can reduce old-regime taxable income."
+            )
+
+        if profile.other_deductions is not None and profile.other_deductions == 0:
+            missed.append(
+                f"Section 80TTA: Savings-account interest up to {self._format_inr(config.SECTION_80TTA_LIMIT)} "
+                "can be claimed under the old regime if you earned such interest and have not already included it."
+            )
+            missed.append(
+                "Other deductions: If this bucket is intentionally left at ₹0, also review sections "
+                "80G (donations) and 80E (education-loan interest) in case they apply to you."
             )
         return missed
 
@@ -1167,7 +1299,7 @@ Return ONLY a JSON array: [{{"fund_name": "...", "action": "...", ...}}, ...]
 
         recommended = "old" if old_tax <= new_tax else "new"
         savings = abs(old_tax - new_tax)
-        missed = self._find_missed_deductions(profile)
+        missed = self._find_missed_deductions(profile, old_total_tax=old_tax)
 
         # Use LLM to generate instrument suggestions
         instruments = self._generate_instrument_suggestions(profile, missed)

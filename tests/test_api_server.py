@@ -71,6 +71,10 @@ def test_tax_compare_endpoint_returns_validated_values():
         assert data["tax_analysis"]["new_total_tax"] == 292500.0
         assert data["tax_analysis"]["recommended_regime"] == "new"
         assert data["tax_analysis"]["savings_amount"] == 74100.0
+        assert any(
+            step["section"] == "Working" and "HRA working" in step["description"]
+            for step in data["tax_analysis"]["old_regime_steps"]
+        )
     finally:
         server.shutdown()
         server.server_close()

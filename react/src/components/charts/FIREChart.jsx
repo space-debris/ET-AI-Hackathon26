@@ -11,6 +11,9 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/Card';
 import { formatCompactNumber } from '../../utils/helpers';
 
+const timelineChartMargin = { top: 10, right: 64, left: 24, bottom: 8 };
+const sipChartMargin = { top: 10, right: 32, left: 24, bottom: 8 };
+
 export function FIRETimelineChart({ milestones, targetCorpus }) {
   const data = milestones.map((m) => ({
     year: m.year,
@@ -66,7 +69,7 @@ export function FIRETimelineChart({ milestones, targetCorpus }) {
       <CardContent>
         <div className="h-96">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <AreaChart data={data} margin={timelineChartMargin}>
               <defs>
                 <linearGradient id="colorEquity" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
@@ -82,18 +85,32 @@ export function FIRETimelineChart({ milestones, targetCorpus }) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="label" tickLine={false} />
+              <XAxis
+                dataKey="label"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={10}
+                minTickGap={12}
+              />
               <YAxis
                 tickFormatter={(v) => formatCompactNumber(v)}
                 tickLine={false}
                 axisLine={false}
+                width={84}
+                tickMargin={10}
+                allowDecimals={false}
               />
               <Tooltip content={<CustomTooltip />} />
               <ReferenceLine
                 y={targetCorpus}
                 stroke="#ef4444"
                 strokeDasharray="5 5"
-                label={{ value: 'Target', position: 'right', fontSize: 12 }}
+                label={{
+                  value: 'Target',
+                  position: 'insideTopRight',
+                  fill: '#ef4444',
+                  fontSize: 12,
+                }}
               />
               <Area
                 type="monotone"
@@ -185,13 +202,22 @@ export function SIPProgressChart({ milestones }) {
       <CardContent>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <AreaChart data={data} margin={sipChartMargin}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="year" tickLine={false} />
+              <XAxis
+                dataKey="year"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={10}
+                minTickGap={12}
+              />
               <YAxis
                 tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`}
                 tickLine={false}
                 axisLine={false}
+                width={76}
+                tickMargin={10}
+                allowDecimals={false}
               />
               <Tooltip content={<CustomTooltip />} />
               <Area

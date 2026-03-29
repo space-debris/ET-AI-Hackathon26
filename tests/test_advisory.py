@@ -293,6 +293,29 @@ class TestTaxRegimeCalculation:
         has_hra_step = any("HRA" in s.description for s in steps)
         assert has_hra_step
 
+    def test_hra_working_step_visible_even_when_exemption_is_zero(self, advisory_agent):
+        """HRA inputs should still expose the working when no exemption is claimable."""
+        profile = UserFinancialProfile(
+            age=30,
+            annual_income=2400000,
+            monthly_expenses=50000,
+            base_salary=1800000,
+            hra_received=360000,
+            rent_paid=0,
+        )
+
+        taxable, _, steps = advisory_agent._calculate_tax_old_regime(profile)
+
+        assert taxable == pytest.approx(2400000 - 75000)
+        assert any(
+            step.section == "Working" and "HRA working" in step.description
+            for step in steps
+        )
+        assert not any(
+            step.description == "Less: HRA Exemption" and step.amount < 0
+            for step in steps
+        )
+
     def test_regime_comparison(self, advisory_agent, high_income_profile):
         """Full regime comparison — should identify the better regime."""
         result = advisory_agent.generate_tax_analysis(high_income_profile)
@@ -361,6 +384,93 @@ class TestMissedDeductions:
         )
         missed = advisory_agent._find_missed_deductions(profile)
         assert any("80C" in m and "70,000" in m for m in missed)
+
+    def test_home_loan_underutilization_is_flagged(self, advisory_agent):
+        """Partial Section 24(b) usage should show the remaining deduction gap."""
+        profile = UserFinancialProfile(
+            age=35,
+            annual_income=2400000,
+            monthly_expenses=80000,
+            base_salary=1800000,
+            hra_received=360000,
+            rent_paid=480000,
+            metro_city=True,
+            section_80c=150000,
+            nps_contribution=50000,
+            medical_insurance_premium=25000,
+            home_loan_interest=40000,
+        )
+
+        missed = advisory_agent._find_missed_deductions(profile)
+
+        assert any("24(b)" in m and "160,000" in m for m in missed)
+        assert any("old-regime tax" in m for m in missed)
+
+    def test_partial_nps_headroom_is_flagged(self, advisory_agent):
+        """Partial NPS usage should highlight remaining 80CCD(1B) headroom."""
+        profile = UserFinancialProfile(
+            age=35,
+            annual_income=2400000,
+            monthly_expenses=80000,
+            section_80c=150000,
+            nps_contribution=20000,
+            medical_insurance_premium=25000,
+            home_loan_interest=200000,
+        )
+
+        missed = advisory_agent._find_missed_deductions(profile)
+
+        assert any("80CCD(1B)" in m and "30,000" in m for m in missed)
+        assert any("old-regime tax" in m for m in missed)
+
+    def test_partial_80d_headroom_is_flagged(self, advisory_agent):
+        """Partial 80D usage should highlight remaining self/family cap headroom."""
+        profile = UserFinancialProfile(
+            age=35,
+            annual_income=2400000,
+            monthly_expenses=80000,
+            section_80c=150000,
+            nps_contribution=50000,
+            medical_insurance_premium=10000,
+            home_loan_interest=200000,
+        )
+
+        missed = advisory_agent._find_missed_deductions(profile)
+
+        assert any("80D" in m and "15,000" in m for m in missed)
+        assert any("old-regime tax" in m for m in missed)
+
+    def test_hra_not_claimed_is_flagged_when_receiving_hra(self, advisory_agent):
+        """Receiving HRA with zero rent should trigger a missed-deduction note."""
+        profile = UserFinancialProfile(
+            age=30,
+            annual_income=1800000,
+            monthly_expenses=50000,
+            base_salary=1200000,
+            hra_received=360000,
+            rent_paid=0,
+        )
+
+        missed = advisory_agent._find_missed_deductions(profile)
+
+        assert any("HRA exemption" in m and "rent paid is ₹0" in m for m in missed)
+
+    def test_80tta_reminder_shown_for_explicit_zero_other_deductions(self, advisory_agent):
+        """An explicit zero other-deduction field should remind about 80TTA."""
+        profile = UserFinancialProfile(
+            age=30,
+            annual_income=1200000,
+            monthly_expenses=40000,
+            section_80c=150000,
+            nps_contribution=50000,
+            medical_insurance_premium=25000,
+            home_loan_interest=200000,
+            other_deductions=0,
+        )
+
+        missed = advisory_agent._find_missed_deductions(profile)
+
+        assert any("80TTA" in m and "10,000" in m for m in missed)
 
 
 # =============================================================================
